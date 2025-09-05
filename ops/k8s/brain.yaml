@@ -1,0 +1,197 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: brain
+  namespace: huskyapply
+  labels:
+    app: brain
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: brain
+  template:
+    metadata:
+      labels:
+        app: brain
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
+    spec:
+      containers:
+      - name: brain
+        image: huskyapply/brain:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: brain-config
+        - secretRef:
+            name: brain-secrets
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: PYTHONPATH
+          value: "/app"
+        # Resume Analysis Configuration
+        - name: RESUME_ANALYSIS_ENABLED
+          value: "true"
+        - name: RESUME_PARSER_MODEL
+          value: "gpt-4o-mini"     # Cost-effective model for parsing
+        - name: SKILLS_MATCHING_MODEL
+          value: "claude-3-haiku" # Fast model for skills extraction
+        - name: AI_CACHE_ENABLED
+          value: "true"
+        - name: AI_CACHE_TTL
+          value: "1800"            # 30 minutes for resume analysis cache
+        # Performance Optimization
+        - name: MODEL_ROUTER_ENABLED
+          value: "true"
+        - name: SEMANTIC_CACHE_ENABLED
+          value: "true"
+        - name: VECTOR_DB_ENABLED
+          value: "true"
+        - name: WORKERS
+          value: "6"               # Increased for resume analysis workload
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          requests:
+            memory: "2Gi"      # Increased for AI model loading
+            cpu: "750m"        # Higher baseline for resume processing
+          limits:
+            memory: "6Gi"      # Larger limit for complex AI operations
+            cpu: "3000m"       # Allow burst for parallel processing
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 90   # Extended for AI model initialization
+          periodSeconds: 15
+          timeoutSeconds: 15        # Longer timeout for model loading
+          failureThreshold: 40      # More tolerant startup for AI services
+        volumeMounts:
+        - name: brain-logs
+          mountPath: /app/logs
+        - name: tmp-volume
+          mountPath: /tmp
+      volumes:
+      - name: brain-logs
+        emptyDir: {}
+      - name: tmp-volume
+        emptyDir: {}
+      priorityClassName: huskyapply-high
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - brain
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: brain-service
+  namespace: huskyapply
+  labels:
+    app: brain
+spec:
+  selector:
+    app: brain
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: brain-hpa
+  namespace: huskyapply
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: brain
+  minReplicas: 3              # Increased baseline for resume analysis load
+  maxReplicas: 40             # Higher ceiling for AI processing bursts
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: brain-pdb
+  namespace: huskyapply
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: brain

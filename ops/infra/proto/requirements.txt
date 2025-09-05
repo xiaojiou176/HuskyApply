@@ -1,0 +1,18 @@
+# Protocol Buffers and gRPC for Python
+grpcio==1.59.3
+grpcio-tools==1.59.3
+protobuf==4.25.1
+grpcio-status==1.59.3
+
+# gRPC health checking
+grpcio-health-checking==1.59.3
+
+# gRPC reflection for debugging
+grpcio-reflection==1.59.3
+
+# Performance and monitoring
+grpcio-channelz==1.59.3
+opencensus-ext-grpc==0.11.0
+
+# Security
+cryptography>=41.0.0

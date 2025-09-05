@@ -1,0 +1,159 @@
+plugins {
+    id 'java'
+    id 'com.google.protobuf' version '0.9.4'
+    id 'maven-publish'
+}
+
+group = 'com.huskyapply'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    // gRPC and Protocol Buffers
+    implementation 'io.grpc:grpc-netty-shaded:1.59.0'
+    implementation 'io.grpc:grpc-protobuf:1.59.0'
+    implementation 'io.grpc:grpc-stub:1.59.0'
+    implementation 'io.grpc:grpc-services:1.59.0'
+    
+    // Protocol Buffers
+    implementation 'com.google.protobuf:protobuf-java:3.25.1'
+    implementation 'com.google.protobuf:protobuf-java-util:3.25.1'
+    
+    // gRPC-Web support for browser clients
+    implementation 'io.grpc:grpc-web:1.59.0'
+    
+    // Security and TLS
+    implementation 'io.netty:netty-tcnative-boringssl-static:2.0.62.Final'
+    
+    // Validation
+    implementation 'javax.annotation:javax.annotation-api:1.3.2'
+    
+    // Testing
+    testImplementation 'io.grpc:grpc-testing:1.59.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.7.0'
+}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.1'
+    }
+    
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.59.0'
+        }
+    }
+    
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+}
+
+// Generate sources for both Java and other languages
+task generatePythonProto(type: Exec) {
+    description = 'Generate Python protobuf and gRPC files'
+    group = 'protobuf'
+    
+    commandLine 'python', '-m', 'grpc_tools.protoc',
+            '--proto_path=.',
+            '--python_out=../brain/grpc',
+            '--grpc_python_out=../brain/grpc',
+            'job_processing.proto',
+            'connection_mgmt.proto'
+    
+    workingDir = file('.')
+}
+
+task generateJavaScriptProto(type: Exec) {
+    description = 'Generate JavaScript protobuf and gRPC-Web files'
+    group = 'protobuf'
+    
+    commandLine 'protoc',
+            '--proto_path=.',
+            '--js_out=import_style=commonjs:../frontend/grpc',
+            '--grpc-web_out=import_style=typescript,mode=grpcwebtext:../frontend/grpc',
+            'job_processing.proto',
+            'connection_mgmt.proto'
+    
+    workingDir = file('.')
+}
+
+// Task to generate for all languages
+task generateAllProtos {
+    description = 'Generate protobuf files for all supported languages'
+    group = 'protobuf'
+    
+    dependsOn generateProto, generatePythonProto, generateJavaScriptProto
+}
+
+// Maven publishing configuration
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            
+            pom {
+                name = 'HuskyApply gRPC Protocol Definitions'
+                description = 'Protocol Buffers and gRPC service definitions for HuskyApply microservices'
+                url = 'https://github.com/xiaojiou176/HuskyApply'
+                
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                
+                developers {
+                    developer {
+                        id = 'yifeng-yu'
+                        name = 'Yifeng Yu'
+                        email = 'xiaojiou176@gmail.com'
+                    }
+                }
+            }
+        }
+    }
+    
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/huskyapply/huskyapply")
+            credentials {
+                username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+                password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+            }
+        }
+    }
+}
+
+// Code quality and validation
+task validateProtos(type: Exec) {
+    description = 'Validate protocol buffer definitions'
+    group = 'verification'
+    
+    commandLine 'buf', 'lint'
+    workingDir = file('.')
+}
+
+// Build lifecycle integration
+compileJava.dependsOn generateProto
+generateAllProtos.mustRunAfter clean
+validateProtos.mustRunAfter generateProto
+
+// Clean up generated files
+clean {
+    delete "${projectDir}/../brain/grpc"
+    delete "${projectDir}/../frontend/grpc"
+}

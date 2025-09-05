@@ -1,0 +1,286 @@
+version: "3.9"
+
+services:
+  # PostgreSQL Master Database
+  postgres-master:
+    image: postgres:16
+    container_name: huskyapply-postgres-master
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_REPLICATION_MODE=master
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=replicator_password
+      - POSTGRES_MAX_CONNECTIONS=200
+      - POSTGRES_SHARED_PRELOAD_LIBRARIES=pg_stat_statements
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_master:/var/lib/postgresql/data
+      - ./postgres/postgresql-master.conf:/etc/postgresql/postgresql.conf
+      - ./postgres/pg_hba-master.conf:/etc/postgresql/pg_hba.conf
+      - ./postgres/init-replication.sh:/docker-entrypoint-initdb.d/init-replication.sh
+    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
+    networks:
+      - huskyapply-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # PostgreSQL Read Replica 1
+  postgres-read-1:
+    image: postgres:16
+    container_name: huskyapply-postgres-read-1
+    environment:
+      - PGUSER=postgres
+      - POSTGRES_PASSWORD=husky
+      - POSTGRES_MASTER_SERVICE=postgres-master
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=replicator_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_read1:/var/lib/postgresql/data
+      - ./postgres/postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./postgres/setup-replica.sh:/docker-entrypoint-initdb.d/setup-replica.sh
+    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    networks:
+      - huskyapply-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # PostgreSQL Read Replica 2
+  postgres-read-2:
+    image: postgres:16
+    container_name: huskyapply-postgres-read-2
+    environment:
+      - PGUSER=postgres
+      - POSTGRES_PASSWORD=husky
+      - POSTGRES_MASTER_SERVICE=postgres-master
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=replicator_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata_read2:/var/lib/postgresql/data
+      - ./postgres/postgresql-replica.conf:/etc/postgresql/postgresql.conf
+      - ./postgres/setup-replica.sh:/docker-entrypoint-initdb.d/setup-replica.sh
+    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    networks:
+      - huskyapply-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  rabbitmq-server:
+    image: rabbitmq:3-management
+    container_name: huskyapply-rabbitmq
+    env_file:
+      - .env
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - huskyapply-net
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  redis-server:
+    image: redis:7-alpine
+    container_name: huskyapply-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - huskyapply-net
+
+  # Jaeger All-in-One for Development
+  jaeger-all-in-one:
+    image: jaegertracing/all-in-one:1.60
+    container_name: huskyapply-jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "14268:14268"   # HTTP collector
+      - "14250:14250"   # gRPC collector  
+      - "6831:6831/udp" # Agent UDP port
+      - "6832:6832/udp" # Agent UDP port
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - JAEGER_DISABLED=false
+      - LOG_LEVEL=info
+    networks:
+      - huskyapply-net
+
+  gateway:
+    build: 
+      context: ../gateway
+      dockerfile: Dockerfile
+      target: runtime
+      cache_from:
+        - huskyapply/gateway:deps
+        - huskyapply/gateway:builder
+        - huskyapply/gateway:latest
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: huskyapply/gateway:latest
+    container_name: huskyapply-gateway
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+      rabbitmq-server:
+        condition: service_healthy
+      redis-server:
+        condition: service_started
+      jaeger-all-in-one:
+        condition: service_started
+    ports:
+      - "8080:8080"     # HTTP/1.1 and HTTP/2
+      - "8443:8443"     # HTTP/3 with QUIC
+      - "9090:9090"     # gRPC internal communication
+      - "9091:9091"     # gRPC health check and metrics
+    environment:
+      - RABBITMQ_HOST=rabbitmq-server
+      - REDIS_HOST=redis-server
+      - DB_MASTER_HOST=postgres-master
+      - DB_MASTER_PORT=5432
+      - DB_READ1_HOST=postgres-read-1
+      - DB_READ1_PORT=5432
+      - DB_READ2_HOST=postgres-read-2
+      - DB_READ2_PORT=5432
+      - DB_NAME=huskyapply
+      - DB_USER=husky
+      - DB_PASSWORD=husky
+      - JAEGER_ENDPOINT=http://jaeger-all-in-one:14250
+      - TRACING_ENABLED=true
+      - TRACING_SAMPLING_PROBABILITY=0.5
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+UseStringDeduplication
+      # HTTP/3 and QUIC configuration
+      - SERVER_HTTP3_ENABLED=true
+      - SERVER_HTTP3_PORT=8443
+      - SERVER_HTTP3_IDLE_TIMEOUT=30s
+      - SERVER_HTTP3_MAX_CONCURRENT_STREAMS=100
+      - SERVER_HTTP3_ENABLE_EARLY_DATA=true
+      - SERVER_HTTP3_CONGESTION_CONTROL_ALGORITHM=cubic
+      # gRPC configuration
+      - GRPC_SERVER_PORT=9090
+      - GRPC_HEALTH_PORT=9091
+      - GRPC_BRAIN_HOST=brain
+      - GRPC_BRAIN_PORT=9090
+      - GRPC_POOL_MAX_CONNECTIONS_PER_ENDPOINT=10
+      - GRPC_POOL_KEEPALIVE_TIME=30s
+      - GRPC_POOL_MAX_INBOUND_MESSAGE_SIZE=4194304
+    env_file:
+      - .env
+    networks:
+      - huskyapply-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '1.5'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    sysctls:
+      # Optimize for HTTP/3 and QUIC
+      - net.core.rmem_max=134217728
+      - net.core.wmem_max=134217728
+      - net.ipv4.udp_rmem_min=8192
+      - net.ipv4.udp_wmem_min=8192
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  brain:
+    build:
+      context: ../brain  
+      dockerfile: Dockerfile
+      target: production
+      cache_from:
+        - huskyapply/brain:deps
+        - huskyapply/brain:builder  
+        - huskyapply/brain:latest
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: huskyapply/brain:latest
+    container_name: huskyapply-brain
+    depends_on:
+      gateway:
+        condition: service_healthy
+      rabbitmq-server:
+        condition: service_healthy
+      jaeger-all-in-one:
+        condition: service_started
+    ports:
+      - "8000:8000"     # FastAPI HTTP server
+      - "9090:9090"     # gRPC server
+      - "9092:9092"     # gRPC health check
+    environment:
+      - RABBITMQ_HOST=rabbitmq-server
+      - GATEWAY_INTERNAL_URL=http://gateway:8080
+      - JAEGER_ENDPOINT=http://jaeger-all-in-one:14268/api/traces
+      - TRACING_ENABLED=true
+      - TRACING_SAMPLING_PROBABILITY=0.5
+      # gRPC server configuration
+      - GRPC_SERVER_HOST=0.0.0.0
+      - GRPC_SERVER_PORT=9090
+      - GRPC_HEALTH_PORT=9092
+      - GRPC_MAX_WORKERS=10
+      - GRPC_GATEWAY_HOST=gateway
+      - GRPC_GATEWAY_PORT=9090
+      - GRPC_ENABLE_REFLECTION=true
+    env_file:
+      - .env
+    networks:
+      - huskyapply-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2.5G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+volumes:
+  pgdata_master:
+  pgdata_read1:
+  pgdata_read2:
+  redis_data:
+
+networks:
+  huskyapply-net:
+    driver: bridge

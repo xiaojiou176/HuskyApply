@@ -1,0 +1,381 @@
+syntax = "proto3";
+
+package huskyapply.jobprocessing.v1;
+
+option java_package = "com.huskyapply.grpc.jobprocessing.v1";
+option java_outer_classname = "JobProcessingProtos";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+
+// Core job processing service for Gateway-Brain communication
+service JobProcessingService {
+    // Submit a job for processing (replaces RabbitMQ message publishing)
+    rpc SubmitJob(JobSubmissionRequest) returns (JobSubmissionResponse);
+    
+    // Get real-time status updates (replaces HTTP SSE callbacks)
+    rpc StreamJobUpdates(JobUpdateRequest) returns (stream JobUpdateResponse);
+    
+    // Bidirectional streaming for batch job processing
+    rpc ProcessJobBatch(stream BatchJobRequest) returns (stream BatchJobResponse);
+    
+    // Get job processing result (replaces HTTP GET artifact endpoint)
+    rpc GetJobResult(JobResultRequest) returns (JobResultResponse);
+    
+    // Health check and service discovery
+    rpc HealthCheck(google.protobuf.Empty) returns (HealthResponse);
+    
+    // Cancel job processing
+    rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+    
+    // Get processing metrics and statistics
+    rpc GetProcessingMetrics(MetricsRequest) returns (MetricsResponse);
+}
+
+// Brain service callbacks to Gateway (replaces HTTP callbacks)
+service GatewayCallbackService {
+    // Send status updates from Brain to Gateway
+    rpc UpdateJobStatus(JobStatusUpdate) returns (StatusUpdateAck);
+    
+    // Stream real-time processing events
+    rpc StreamProcessingEvents(stream ProcessingEvent) returns (stream EventAck);
+    
+    // Report processing metrics
+    rpc ReportMetrics(ProcessingMetrics) returns (google.protobuf.Empty);
+}
+
+// Job submission request message
+message JobSubmissionRequest {
+    string job_id = 1;
+    string jd_url = 2;
+    string resume_uri = 3;
+    string model_provider = 4;
+    string model_name = 5;
+    string user_id = 6;
+    string trace_id = 7;
+    Priority priority = 8;
+    ProcessingOptions options = 9;
+    map<string, string> metadata = 10;
+}
+
+message JobSubmissionResponse {
+    string job_id = 1;
+    JobStatus status = 2;
+    string message = 3;
+    google.protobuf.Timestamp submitted_at = 4;
+    int32 queue_position = 5;
+    int64 estimated_completion_ms = 6;
+}
+
+// Job update streaming request
+message JobUpdateRequest {
+    repeated string job_ids = 1;
+    string user_id = 2;
+    bool include_progress_details = 3;
+    UpdateFilter filter = 4;
+}
+
+message JobUpdateResponse {
+    string job_id = 1;
+    JobStatus status = 2;
+    ProcessingProgress progress = 3;
+    google.protobuf.Timestamp updated_at = 4;
+    string message = 5;
+    map<string, string> metadata = 6;
+}
+
+// Batch processing messages
+message BatchJobRequest {
+    string batch_id = 1;
+    repeated JobSubmissionRequest jobs = 2;
+    BatchOptions options = 3;
+}
+
+message BatchJobResponse {
+    string batch_id = 1;
+    int32 total_jobs = 2;
+    int32 completed_jobs = 3;
+    int32 failed_jobs = 4;
+    repeated JobUpdateResponse job_updates = 5;
+    BatchStatus batch_status = 6;
+}
+
+// Job result retrieval
+message JobResultRequest {
+    string job_id = 1;
+    string user_id = 2;
+    bool include_metadata = 3;
+    ResultFormat format = 4;
+}
+
+message JobResultResponse {
+    string job_id = 1;
+    JobStatus status = 2;
+    GeneratedContent content = 3;
+    ProcessingMetadata metadata = 4;
+    google.protobuf.Timestamp created_at = 5;
+}
+
+// Status update messages (Brain -> Gateway)
+message JobStatusUpdate {
+    string job_id = 1;
+    JobStatus status = 2;
+    string message = 3;
+    ProcessingProgress progress = 4;
+    google.protobuf.Timestamp updated_at = 5;
+    map<string, string> metadata = 6;
+    ErrorInfo error = 7;
+}
+
+message StatusUpdateAck {
+    string job_id = 1;
+    bool acknowledged = 2;
+    string message = 3;
+}
+
+// Real-time processing events
+message ProcessingEvent {
+    string event_id = 1;
+    string job_id = 2;
+    EventType event_type = 3;
+    google.protobuf.Any event_data = 4;
+    google.protobuf.Timestamp timestamp = 5;
+    string trace_id = 6;
+}
+
+message EventAck {
+    string event_id = 1;
+    bool processed = 2;
+}
+
+// Processing metrics and monitoring
+message ProcessingMetrics {
+    string service_name = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    ResourceUsage resource_usage = 3;
+    PerformanceStats performance = 4;
+    QueueStats queue_stats = 5;
+    map<string, double> custom_metrics = 6;
+}
+
+message MetricsRequest {
+    google.protobuf.Timestamp start_time = 1;
+    google.protobuf.Timestamp end_time = 2;
+    repeated string metric_types = 3;
+    string user_id = 4;
+}
+
+message MetricsResponse {
+    repeated ProcessingMetrics metrics = 1;
+    AggregatedStats aggregated = 2;
+}
+
+// Health check response
+message HealthResponse {
+    ServiceStatus status = 1;
+    string version = 2;
+    google.protobuf.Timestamp timestamp = 3;
+    map<string, ServiceStatus> dependencies = 4;
+    ResourceUsage resource_usage = 5;
+}
+
+// Cancel job request/response
+message CancelJobRequest {
+    string job_id = 1;
+    string user_id = 2;
+    string reason = 3;
+}
+
+message CancelJobResponse {
+    string job_id = 1;
+    bool cancelled = 2;
+    string message = 3;
+    JobStatus final_status = 4;
+}
+
+// Supporting data structures
+message ProcessingOptions {
+    bool enable_streaming = 1;
+    bool enable_caching = 2;
+    OptimizationProfile optimization_profile = 3;
+    int32 max_retries = 4;
+    int64 timeout_ms = 5;
+    CompressionType compression = 6;
+}
+
+message ProcessingProgress {
+    int32 percentage = 1;
+    ProcessingPhase current_phase = 2;
+    string current_operation = 3;
+    int64 elapsed_ms = 4;
+    int64 estimated_remaining_ms = 5;
+    map<string, string> phase_details = 6;
+}
+
+message GeneratedContent {
+    string content_type = 1;
+    string content = 2;
+    int32 word_count = 3;
+    double quality_score = 4;
+    bytes raw_data = 5;
+}
+
+message ProcessingMetadata {
+    string model_used = 1;
+    double cost_usd = 2;
+    int64 processing_time_ms = 3;
+    bool cached = 4;
+    int32 tokens_used = 5;
+    string optimization_profile = 6;
+    map<string, string> ai_metadata = 7;
+}
+
+message ErrorInfo {
+    string error_code = 1;
+    string error_message = 2;
+    ErrorCategory category = 3;
+    bool retryable = 4;
+    int32 retry_count = 5;
+    google.protobuf.Timestamp error_timestamp = 6;
+}
+
+message ResourceUsage {
+    double cpu_percent = 1;
+    double memory_percent = 2;
+    int64 memory_used_mb = 3;
+    int32 active_connections = 4;
+    int32 thread_count = 5;
+}
+
+message PerformanceStats {
+    double avg_processing_time_ms = 1;
+    double p95_processing_time_ms = 2;
+    double p99_processing_time_ms = 3;
+    int64 total_requests = 4;
+    int64 successful_requests = 5;
+    int64 failed_requests = 6;
+    double throughput_per_second = 7;
+}
+
+message QueueStats {
+    int32 pending_jobs = 1;
+    int32 processing_jobs = 2;
+    int32 total_queued = 3;
+    double avg_wait_time_ms = 4;
+}
+
+message AggregatedStats {
+    int64 total_jobs_processed = 1;
+    double total_cost_usd = 2;
+    double avg_quality_score = 3;
+    double cache_hit_rate = 4;
+    int64 total_processing_time_ms = 5;
+}
+
+message UpdateFilter {
+    repeated JobStatus status_filter = 1;
+    google.protobuf.Timestamp since = 2;
+    bool include_metadata = 3;
+}
+
+message BatchOptions {
+    int32 max_concurrent_jobs = 1;
+    bool fail_fast = 2;
+    Priority batch_priority = 3;
+    int64 timeout_ms = 4;
+}
+
+// Enums
+enum JobStatus {
+    JOB_STATUS_UNSPECIFIED = 0;
+    JOB_STATUS_PENDING = 1;
+    JOB_STATUS_QUEUED = 2;
+    JOB_STATUS_PROCESSING = 3;
+    JOB_STATUS_COMPLETED = 4;
+    JOB_STATUS_FAILED = 5;
+    JOB_STATUS_CANCELLED = 6;
+    JOB_STATUS_TIMEOUT = 7;
+}
+
+enum Priority {
+    PRIORITY_UNSPECIFIED = 0;
+    PRIORITY_LOW = 1;
+    PRIORITY_NORMAL = 2;
+    PRIORITY_HIGH = 3;
+    PRIORITY_URGENT = 4;
+    PRIORITY_EXPRESS = 5;
+}
+
+enum ServiceStatus {
+    SERVICE_STATUS_UNSPECIFIED = 0;
+    SERVICE_STATUS_HEALTHY = 1;
+    SERVICE_STATUS_DEGRADED = 2;
+    SERVICE_STATUS_UNHEALTHY = 3;
+    SERVICE_STATUS_STARTING = 4;
+    SERVICE_STATUS_STOPPING = 5;
+}
+
+enum ProcessingPhase {
+    PROCESSING_PHASE_UNSPECIFIED = 0;
+    PROCESSING_PHASE_QUEUED = 1;
+    PROCESSING_PHASE_SCRAPING = 2;
+    PROCESSING_PHASE_AI_PROCESSING = 3;
+    PROCESSING_PHASE_OPTIMIZATION = 4;
+    PROCESSING_PHASE_VALIDATION = 5;
+    PROCESSING_PHASE_COMPLETED = 6;
+}
+
+enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    EVENT_TYPE_JOB_STARTED = 1;
+    EVENT_TYPE_PROGRESS_UPDATE = 2;
+    EVENT_TYPE_JOB_COMPLETED = 3;
+    EVENT_TYPE_JOB_FAILED = 4;
+    EVENT_TYPE_METRIC_REPORT = 5;
+    EVENT_TYPE_RESOURCE_WARNING = 6;
+}
+
+enum OptimizationProfile {
+    OPTIMIZATION_PROFILE_UNSPECIFIED = 0;
+    OPTIMIZATION_PROFILE_SPEED = 1;
+    OPTIMIZATION_PROFILE_QUALITY = 2;
+    OPTIMIZATION_PROFILE_COST = 3;
+    OPTIMIZATION_PROFILE_BALANCED = 4;
+}
+
+enum CompressionType {
+    COMPRESSION_TYPE_UNSPECIFIED = 0;
+    COMPRESSION_TYPE_NONE = 1;
+    COMPRESSION_TYPE_GZIP = 2;
+    COMPRESSION_TYPE_LZ4 = 3;
+    COMPRESSION_TYPE_SNAPPY = 4;
+}
+
+enum ResultFormat {
+    RESULT_FORMAT_UNSPECIFIED = 0;
+    RESULT_FORMAT_JSON = 1;
+    RESULT_FORMAT_TEXT = 2;
+    RESULT_FORMAT_BINARY = 3;
+}
+
+enum ErrorCategory {
+    ERROR_CATEGORY_UNSPECIFIED = 0;
+    ERROR_CATEGORY_NETWORK = 1;
+    ERROR_CATEGORY_AI_PROVIDER = 2;
+    ERROR_CATEGORY_VALIDATION = 3;
+    ERROR_CATEGORY_RATE_LIMIT = 4;
+    ERROR_CATEGORY_RESOURCE = 5;
+    ERROR_CATEGORY_INTERNAL = 6;
+}
+
+enum BatchStatus {
+    BATCH_STATUS_UNSPECIFIED = 0;
+    BATCH_STATUS_PENDING = 1;
+    BATCH_STATUS_PROCESSING = 2;
+    BATCH_STATUS_COMPLETED = 3;
+    BATCH_STATUS_PARTIALLY_FAILED = 4;
+    BATCH_STATUS_FAILED = 5;
+    BATCH_STATUS_CANCELLED = 6;
+}

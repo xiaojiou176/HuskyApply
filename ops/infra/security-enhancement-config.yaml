@@ -1,0 +1,665 @@
+# HuskyApply Security Enhancement Configuration
+# Enhanced security for resume data and job tracking information
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-policies
+  namespace: huskyapply
+data:
+  # Network Security Policies
+  network-policy.yaml: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: huskyapply-network-policy
+      namespace: huskyapply
+    spec:
+      podSelector:
+        matchLabels:
+          app: huskyapply
+      policyTypes:
+      - Ingress
+      - Egress
+      ingress:
+      # Allow traffic from ingress controller
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+        ports:
+        - protocol: TCP
+          port: 8080
+      # Allow internal service communication
+      - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
+              app: brain
+        ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8000
+      egress:
+      # Allow DNS resolution
+      - to: []
+        ports:
+        - protocol: UDP
+          port: 53
+      # Allow database connections
+      - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+        ports:
+        - protocol: TCP
+          port: 5432
+      # Allow RabbitMQ connections
+      - to:
+        - podSelector:
+            matchLabels:
+              app: rabbitmq
+        ports:
+        - protocol: TCP
+          port: 5672
+      # Allow HTTPS outbound for AI APIs
+      - to: []
+        ports:
+        - protocol: TCP
+          port: 443
+
+  # Pod Security Standards
+  pod-security-policy.yaml: |
+    apiVersion: policy/v1beta1
+    kind: PodSecurityPolicy
+    metadata:
+      name: huskyapply-psp
+    spec:
+      privileged: false
+      allowPrivilegeEscalation: false
+      requiredDropCapabilities:
+        - ALL
+      volumes:
+        - 'configMap'
+        - 'emptyDir'
+        - 'projected'
+        - 'secret'
+        - 'downwardAPI'
+        - 'persistentVolumeClaim'
+      hostNetwork: false
+      hostIPC: false
+      hostPID: false
+      runAsUser:
+        rule: 'MustRunAsNonRoot'
+      supplementalGroups:
+        rule: 'MustRunAs'
+        ranges:
+          - min: 1000
+            max: 65535
+      fsGroup:
+        rule: 'MustRunAs'
+        ranges:
+          - min: 1000
+            max: 65535
+      seLinux:
+        rule: 'RunAsAny'
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: resume-encryption-key
+  namespace: huskyapply
+type: Opaque
+data:
+  # Base64 encoded 256-bit encryption key for resume data
+  # Generated with: openssl rand -base64 32
+  encryption-key: "VGhpc0lzQVNlY3VyZTI1NkJpdEVuY3J5cHRpb25LZXlGb3JSZXN1bWVEYXRh"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: huskyapply
+data:
+  vault-config.hcl: |
+    # HashiCorp Vault configuration for secrets management
+    storage "postgresql" {
+      connection_url = "postgres://vault_user:vault_pass@postgres-master:5432/vault_db?sslmode=require"
+    }
+    
+    listener "tcp" {
+      address = "0.0.0.0:8200"
+      tls_cert_file = "/vault/tls/tls.crt"
+      tls_key_file = "/vault/tls/tls.key"
+    }
+    
+    seal "transit" {
+      address = "https://vault.huskyapply.com:8200"
+      key_name = "huskyapply-autounseal"
+      mount_path = "transit/"
+    }
+    
+    ui = true
+    cluster_name = "huskyapply-vault"
+    log_level = "INFO"
+    
+    # Enable audit logging
+    audit {
+      file {
+        file_path = "/vault/logs/audit.log"
+        log_raw = false
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault
+  namespace: huskyapply
+  labels:
+    app: vault
+spec:
+  replicas: 3  # HA setup
+  selector:
+    matchLabels:
+      app: vault
+  template:
+    metadata:
+      labels:
+        app: vault
+    spec:
+      serviceAccountName: vault
+      containers:
+      - name: vault
+        image: vault:1.15.0
+        args:
+        - "vault"
+        - "server"
+        - "-config=/vault/config/vault-config.hcl"
+        env:
+        - name: VAULT_ADDR
+          value: "https://127.0.0.1:8200"
+        - name: VAULT_API_ADDR
+          value: "https://vault.huskyapply.com:8200"
+        - name: VAULT_CLUSTER_ADDR
+          value: "https://$(POD_IP):8201"
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 8200
+          name: vault-port
+          protocol: TCP
+        - containerPort: 8201
+          name: cluster-port
+          protocol: TCP
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+        - name: vault-tls
+          mountPath: /vault/tls
+        - name: vault-logs
+          mountPath: /vault/logs
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 1Gi
+            cpu: 500m
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            add: ["IPC_LOCK"]
+        readinessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+            port: 8200
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /v1/sys/health?standbyok=true
+            port: 8200
+            scheme: HTTPS
+          initialDelaySeconds: 60
+          periodSeconds: 10
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-config
+      - name: vault-tls
+        secret:
+          secretName: vault-tls
+      - name: vault-logs
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: vault
+            topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: huskyapply
+  labels:
+    app: vault
+spec:
+  type: ClusterIP
+  ports:
+  - name: vault-port
+    port: 8200
+    targetPort: 8200
+    protocol: TCP
+  selector:
+    app: vault
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-rules
+  namespace: huskyapply
+data:
+  huskyapply-rules.yaml: |
+    # Falco security monitoring rules for HuskyApply
+    
+    # Detect suspicious file access in resume storage
+    - rule: Suspicious Resume File Access
+      desc: Detect unauthorized access to resume files
+      condition: >
+        open_read and
+        fd.directory contains "/app/uploads/resumes" and
+        not proc.name in (java, python, nginx) and
+        not user.name in (root, huskyapply)
+      output: >
+        Unauthorized resume file access
+        (user=%user.name command=%proc.cmdline file=%fd.name)
+      priority: WARNING
+      tags: [filesystem, privacy]
+    
+    # Detect database credential access
+    - rule: Database Credential Access
+      desc: Detect attempts to access database credentials
+      condition: >
+        open_read and
+        (fd.filename contains "postgresql" or
+         fd.filename contains "database") and
+        fd.filename contains "password"
+      output: >
+        Potential database credential access
+        (user=%user.name command=%proc.cmdline file=%fd.name)
+      priority: CRITICAL
+      tags: [database, credentials]
+    
+    # Detect privilege escalation attempts
+    - rule: Privilege Escalation Attempt
+      desc: Detect attempts to escalate privileges
+      condition: >
+        spawned_process and
+        proc.name in (sudo, su, doas) and
+        not user.name = root
+      output: >
+        Privilege escalation attempt detected
+        (user=%user.name command=%proc.cmdline)
+      priority: CRITICAL
+      tags: [privilege_escalation]
+    
+    # Detect network connections to suspicious destinations
+    - rule: Suspicious Network Connection
+      desc: Detect connections to potentially malicious destinations
+      condition: >
+        outbound and
+        not fd.sip in (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) and
+        not fd.sport in (80, 443, 5672, 5432, 6379) and
+        proc.name in (java, python)
+      output: >
+        Suspicious outbound connection
+        (user=%user.name command=%proc.cmdline connection=%fd.name)
+      priority: WARNING
+      tags: [network, suspicious]
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: falco
+  namespace: huskyapply
+spec:
+  selector:
+    matchLabels:
+      app: falco
+  template:
+    metadata:
+      labels:
+        app: falco
+    spec:
+      serviceAccountName: falco
+      hostNetwork: true
+      hostPID: true
+      containers:
+      - name: falco
+        image: falcosecurity/falco:latest
+        args:
+        - /usr/bin/falco
+        - --cri=/run/containerd/containerd.sock
+        - --k8s-api=https://kubernetes.default.svc.cluster.local
+        - --k8s-api-cert=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        - --k8s-api-token=/var/run/secrets/kubernetes.io/serviceaccount/token
+        env:
+        - name: FALCO_K8S_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /host/var/run/docker.sock
+          name: docker-socket
+        - mountPath: /host/run/containerd/containerd.sock
+          name: containerd-socket
+        - mountPath: /host/dev
+          name: dev-fs
+        - mountPath: /host/proc
+          name: proc-fs
+          readOnly: true
+        - mountPath: /host/boot
+          name: boot-fs
+          readOnly: true
+        - mountPath: /host/lib/modules
+          name: lib-modules
+          readOnly: true
+        - mountPath: /host/usr
+          name: usr-fs
+          readOnly: true
+        - mountPath: /etc/falco
+          name: falco-rules
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 1Gi
+            cpu: 500m
+      volumes:
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+      - name: containerd-socket
+        hostPath:
+          path: /run/containerd/containerd.sock
+      - name: dev-fs
+        hostPath:
+          path: /dev
+      - name: proc-fs
+        hostPath:
+          path: /proc
+      - name: boot-fs
+        hostPath:
+          path: /boot
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+      - name: usr-fs
+        hostPath:
+          path: /usr
+      - name: falco-rules
+        configMap:
+          name: falco-rules
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+
+---
+# RBAC for security services
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault
+  namespace: huskyapply
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vault
+subjects:
+- kind: ServiceAccount
+  name: vault
+  namespace: huskyapply
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: falco
+  namespace: huskyapply
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: falco
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods", "replicationcontrollers", "events", "services", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: falco
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: falco
+subjects:
+- kind: ServiceAccount
+  name: falco
+  namespace: huskyapply
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-encryption-config
+  namespace: huskyapply
+data:
+  backup-script.sh: |
+    #!/bin/bash
+    # Encrypted backup script for sensitive data
+    
+    set -euo pipefail
+    
+    # Configuration
+    BACKUP_DIR="/backups/encrypted"
+    ENCRYPTION_KEY_FILE="/secrets/backup-encryption-key"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    
+    # Database backup with encryption
+    backup_database() {
+        echo "Creating encrypted database backup..."
+        
+        docker exec huskyapply-postgres-master pg_dump \
+          --host=localhost --port=5432 --username=husky \
+          --format=custom --compress=9 --verbose \
+          --file=/tmp/huskyapply_${TIMESTAMP}.backup \
+          huskyapply
+        
+        # Encrypt the backup file
+        openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+          -in /tmp/huskyapply_${TIMESTAMP}.backup \
+          -out ${BACKUP_DIR}/huskyapply_${TIMESTAMP}.backup.enc \
+          -pass file:${ENCRYPTION_KEY_FILE}
+        
+        # Verify backup integrity
+        openssl enc -aes-256-cbc -d -pbkdf2 -iter 100000 \
+          -in ${BACKUP_DIR}/huskyapply_${TIMESTAMP}.backup.enc \
+          -pass file:${ENCRYPTION_KEY_FILE} \
+          | pg_restore --list >/dev/null
+        
+        echo "✅ Encrypted database backup completed: huskyapply_${TIMESTAMP}.backup.enc"
+        
+        # Clean up temporary file
+        rm -f /tmp/huskyapply_${TIMESTAMP}.backup
+    }
+    
+    # Resume files backup with encryption
+    backup_resume_files() {
+        echo "Creating encrypted resume files backup..."
+        
+        # Create tar archive of resume files
+        tar -czf /tmp/resumes_${TIMESTAMP}.tar.gz -C /app/uploads resumes/
+        
+        # Encrypt the archive
+        openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+          -in /tmp/resumes_${TIMESTAMP}.tar.gz \
+          -out ${BACKUP_DIR}/resumes_${TIMESTAMP}.tar.gz.enc \
+          -pass file:${ENCRYPTION_KEY_FILE}
+        
+        echo "✅ Encrypted resume files backup completed: resumes_${TIMESTAMP}.tar.gz.enc"
+        
+        # Clean up temporary file
+        rm -f /tmp/resumes_${TIMESTAMP}.tar.gz
+    }
+    
+    # Cleanup old backups (keep last 30 days)
+    cleanup_old_backups() {
+        echo "Cleaning up backups older than 30 days..."
+        find ${BACKUP_DIR} -type f -name "*.enc" -mtime +30 -delete
+        echo "✅ Cleanup completed"
+    }
+    
+    # Main execution
+    main() {
+        # Ensure backup directory exists
+        mkdir -p ${BACKUP_DIR}
+        
+        # Verify encryption key exists
+        if [[ ! -f ${ENCRYPTION_KEY_FILE} ]]; then
+            echo "❌ Encryption key file not found: ${ENCRYPTION_KEY_FILE}"
+            exit 1
+        fi
+        
+        backup_database
+        backup_resume_files
+        cleanup_old_backups
+        
+        echo "🎉 All backups completed successfully"
+    }
+    
+    main "$@"
+
+  restore-script.sh: |
+    #!/bin/bash
+    # Encrypted restore script for disaster recovery
+    
+    set -euo pipefail
+    
+    BACKUP_DIR="/backups/encrypted"
+    ENCRYPTION_KEY_FILE="/secrets/backup-encryption-key"
+    
+    restore_database() {
+        local backup_file="$1"
+        
+        if [[ ! -f "${BACKUP_DIR}/${backup_file}" ]]; then
+            echo "❌ Backup file not found: ${backup_file}"
+            exit 1
+        fi
+        
+        echo "Restoring database from encrypted backup: ${backup_file}"
+        
+        # Decrypt and restore
+        openssl enc -aes-256-cbc -d -pbkdf2 -iter 100000 \
+          -in "${BACKUP_DIR}/${backup_file}" \
+          -pass file:${ENCRYPTION_KEY_FILE} \
+          | docker exec -i huskyapply-postgres-master pg_restore \
+            --host=localhost --port=5432 --username=husky \
+            --clean --if-exists --verbose \
+            --dbname=huskyapply
+        
+        echo "✅ Database restore completed"
+    }
+    
+    restore_resume_files() {
+        local backup_file="$1"
+        
+        if [[ ! -f "${BACKUP_DIR}/${backup_file}" ]]; then
+            echo "❌ Resume backup file not found: ${backup_file}"
+            exit 1
+        fi
+        
+        echo "Restoring resume files from encrypted backup: ${backup_file}"
+        
+        # Decrypt and extract
+        openssl enc -aes-256-cbc -d -pbkdf2 -iter 100000 \
+          -in "${BACKUP_DIR}/${backup_file}" \
+          -pass file:${ENCRYPTION_KEY_FILE} \
+          | tar -xzf - -C /app/uploads/
+        
+        echo "✅ Resume files restore completed"
+    }
+    
+    # Usage information
+    usage() {
+        echo "Usage: $0 [database|resumes] <backup_filename>"
+        echo "Example: $0 database huskyapply_20241201_120000.backup.enc"
+        echo "Example: $0 resumes resumes_20241201_120000.tar.gz.enc"
+        exit 1
+    }
+    
+    main() {
+        if [[ $# -ne 2 ]]; then
+            usage
+        fi
+        
+        local restore_type="$1"
+        local backup_file="$2"
+        
+        case "${restore_type}" in
+            database)
+                restore_database "${backup_file}"
+                ;;
+            resumes)
+                restore_resume_files "${backup_file}"
+                ;;
+            *)
+                echo "❌ Invalid restore type: ${restore_type}"
+                usage
+                ;;
+        esac
+    }
+    
+    main "$@"

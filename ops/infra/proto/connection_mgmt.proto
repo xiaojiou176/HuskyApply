@@ -1,0 +1,406 @@
+syntax = "proto3";
+
+package huskyapply.connection.v1;
+
+option java_package = "com.huskyapply.grpc.connection.v1";
+option java_outer_classname = "ConnectionManagementProtos";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+
+// Connection and authentication management service
+service ConnectionManagementService {
+    // Establish secure connection with mTLS
+    rpc EstablishConnection(ConnectionRequest) returns (ConnectionResponse);
+    
+    // Authenticate service-to-service communication
+    rpc AuthenticateService(AuthenticationRequest) returns (AuthenticationResponse);
+    
+    // Maintain connection keepalive
+    rpc Keepalive(stream KeepaliveRequest) returns (stream KeepaliveResponse);
+    
+    // Get connection health and metrics
+    rpc GetConnectionHealth(ConnectionHealthRequest) returns (ConnectionHealthResponse);
+    
+    // Configure connection parameters
+    rpc ConfigureConnection(ConnectionConfigRequest) returns (ConnectionConfigResponse);
+    
+    // Gracefully close connection
+    rpc CloseConnection(CloseConnectionRequest) returns (google.protobuf.Empty);
+}
+
+// Service discovery and load balancing
+service ServiceDiscoveryService {
+    // Register service instance
+    rpc RegisterService(ServiceRegistration) returns (RegistrationResponse);
+    
+    // Discover available service instances
+    rpc DiscoverServices(ServiceDiscoveryRequest) returns (stream ServiceInstance);
+    
+    // Get load balancing recommendations
+    rpc GetLoadBalancingInfo(LoadBalancingRequest) returns (LoadBalancingResponse);
+    
+    // Update service health status
+    rpc UpdateServiceHealth(HealthStatusUpdate) returns (google.protobuf.Empty);
+    
+    // Deregister service instance
+    rpc DeregisterService(ServiceDeregistration) returns (google.protobuf.Empty);
+}
+
+// Connection establishment
+message ConnectionRequest {
+    string service_name = 1;
+    string service_version = 2;
+    string instance_id = 3;
+    ConnectionOptions options = 4;
+    TLSConfig tls_config = 5;
+    map<string, string> metadata = 6;
+}
+
+message ConnectionResponse {
+    string connection_id = 1;
+    ConnectionStatus status = 2;
+    string message = 3;
+    ServerCapabilities capabilities = 4;
+    ConnectionParameters parameters = 5;
+    google.protobuf.Timestamp established_at = 6;
+}
+
+// Authentication messages
+message AuthenticationRequest {
+    string service_name = 1;
+    string connection_id = 2;
+    AuthenticationMethod method = 3;
+    AuthCredentials credentials = 4;
+    repeated string required_scopes = 5;
+}
+
+message AuthenticationResponse {
+    string token = 1;
+    google.protobuf.Timestamp expires_at = 2;
+    repeated string granted_scopes = 3;
+    bool authenticated = 4;
+    string message = 5;
+}
+
+// Keepalive messages
+message KeepaliveRequest {
+    string connection_id = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    ConnectionMetrics metrics = 3;
+}
+
+message KeepaliveResponse {
+    string connection_id = 1;
+    bool healthy = 2;
+    google.protobuf.Timestamp server_timestamp = 3;
+    UpdatedParameters parameters = 4;
+}
+
+// Connection health
+message ConnectionHealthRequest {
+    string connection_id = 1;
+    bool include_metrics = 2;
+    bool include_peer_info = 3;
+}
+
+message ConnectionHealthResponse {
+    string connection_id = 1;
+    HealthStatus health_status = 2;
+    ConnectionMetrics metrics = 3;
+    PeerInformation peer_info = 4;
+    repeated HealthIssue issues = 5;
+    google.protobuf.Timestamp last_checked = 6;
+}
+
+// Connection configuration
+message ConnectionConfigRequest {
+    string connection_id = 1;
+    ConnectionParameters parameters = 2;
+    bool apply_immediately = 3;
+}
+
+message ConnectionConfigResponse {
+    string connection_id = 1;
+    bool configured = 2;
+    ConnectionParameters current_parameters = 3;
+    string message = 4;
+}
+
+// Close connection
+message CloseConnectionRequest {
+    string connection_id = 1;
+    string reason = 2;
+    bool graceful = 3;
+    google.protobuf.Duration timeout = 4;
+}
+
+// Service discovery messages
+message ServiceRegistration {
+    string service_name = 1;
+    string service_version = 2;
+    string instance_id = 3;
+    ServiceEndpoint endpoint = 4;
+    HealthCheck health_check = 5;
+    map<string, string> tags = 6;
+    google.protobuf.Duration ttl = 7;
+}
+
+message RegistrationResponse {
+    string registration_id = 1;
+    bool registered = 2;
+    string message = 3;
+    google.protobuf.Timestamp registered_at = 4;
+}
+
+message ServiceDiscoveryRequest {
+    string service_name = 1;
+    repeated string required_tags = 2;
+    string preferred_version = 3;
+    LoadBalancingStrategy strategy = 4;
+    bool healthy_only = 5;
+}
+
+message ServiceInstance {
+    string service_name = 1;
+    string service_version = 2;
+    string instance_id = 3;
+    ServiceEndpoint endpoint = 4;
+    HealthStatus health_status = 5;
+    double load_score = 6;
+    map<string, string> tags = 7;
+    google.protobuf.Timestamp registered_at = 8;
+}
+
+message LoadBalancingRequest {
+    string service_name = 1;
+    LoadBalancingStrategy strategy = 2;
+    int32 max_instances = 3;
+    ClientInfo client_info = 4;
+}
+
+message LoadBalancingResponse {
+    repeated ServiceInstance recommended_instances = 1;
+    LoadBalancingStrategy applied_strategy = 2;
+    string strategy_reason = 3;
+    google.protobuf.Duration refresh_interval = 4;
+}
+
+message HealthStatusUpdate {
+    string service_name = 1;
+    string instance_id = 2;
+    HealthStatus status = 3;
+    string status_message = 4;
+    google.protobuf.Timestamp timestamp = 5;
+}
+
+message ServiceDeregistration {
+    string registration_id = 1;
+    string instance_id = 2;
+    string reason = 3;
+}
+
+// Supporting data structures
+message ConnectionOptions {
+    google.protobuf.Duration keepalive_interval = 1;
+    google.protobuf.Duration timeout = 2;
+    int32 max_message_size = 3;
+    int32 max_concurrent_streams = 4;
+    CompressionMethod compression = 5;
+    bool enable_multiplexing = 6;
+    int32 window_size = 7;
+}
+
+message TLSConfig {
+    bool enabled = 1;
+    string cert_file = 2;
+    string key_file = 3;
+    string ca_file = 4;
+    bool verify_peer = 5;
+    repeated string allowed_dns_names = 6;
+    string cipher_suite = 7;
+}
+
+message ServerCapabilities {
+    repeated string supported_compressions = 1;
+    int32 max_message_size = 2;
+    int32 max_concurrent_streams = 3;
+    bool supports_streaming = 4;
+    bool supports_multiplexing = 5;
+    string protocol_version = 6;
+}
+
+message ConnectionParameters {
+    google.protobuf.Duration keepalive_interval = 1;
+    google.protobuf.Duration idle_timeout = 2;
+    int32 max_message_size = 3;
+    int32 window_size = 4;
+    CompressionMethod compression = 5;
+    QoSParameters qos = 6;
+}
+
+message UpdatedParameters {
+    ConnectionParameters parameters = 1;
+    string update_reason = 2;
+    google.protobuf.Timestamp effective_at = 3;
+}
+
+message AuthCredentials {
+    oneof credential_type {
+        string bearer_token = 1;
+        CertificateAuth certificate = 2;
+        ServiceAccountAuth service_account = 3;
+        ApiKeyAuth api_key = 4;
+    }
+}
+
+message CertificateAuth {
+    bytes certificate = 1;
+    bytes private_key = 2;
+    bytes ca_certificate = 3;
+}
+
+message ServiceAccountAuth {
+    string service_account_id = 1;
+    string signed_jwt = 2;
+    repeated string scopes = 3;
+}
+
+message ApiKeyAuth {
+    string api_key = 1;
+    string api_secret = 2;
+}
+
+message ConnectionMetrics {
+    int64 bytes_sent = 1;
+    int64 bytes_received = 2;
+    int64 messages_sent = 3;
+    int64 messages_received = 4;
+    double latency_ms = 5;
+    double bandwidth_mbps = 6;
+    int32 active_streams = 7;
+    int32 failed_requests = 8;
+}
+
+message PeerInformation {
+    string peer_address = 1;
+    string peer_name = 2;
+    string protocol_version = 3;
+    TLSInformation tls_info = 4;
+    google.protobuf.Timestamp connected_at = 5;
+}
+
+message TLSInformation {
+    string protocol_version = 1;
+    string cipher_suite = 2;
+    string certificate_subject = 3;
+    google.protobuf.Timestamp certificate_expiry = 4;
+    bool peer_verified = 5;
+}
+
+message HealthIssue {
+    IssueType type = 1;
+    IssueSeverity severity = 2;
+    string message = 3;
+    google.protobuf.Timestamp detected_at = 4;
+    map<string, string> details = 5;
+}
+
+message ServiceEndpoint {
+    string host = 1;
+    int32 port = 2;
+    string protocol = 3;
+    string path = 4;
+    bool tls_enabled = 5;
+}
+
+message HealthCheck {
+    string endpoint = 1;
+    google.protobuf.Duration interval = 2;
+    google.protobuf.Duration timeout = 3;
+    int32 healthy_threshold = 4;
+    int32 unhealthy_threshold = 5;
+}
+
+message ClientInfo {
+    string client_id = 1;
+    string client_version = 2;
+    string region = 3;
+    repeated string preferences = 4;
+}
+
+message QoSParameters {
+    int32 priority = 1;
+    double bandwidth_limit_mbps = 2;
+    double latency_target_ms = 3;
+    double jitter_tolerance_ms = 4;
+    bool guaranteed_delivery = 5;
+}
+
+// Enums
+enum ConnectionStatus {
+    CONNECTION_STATUS_UNSPECIFIED = 0;
+    CONNECTION_STATUS_CONNECTING = 1;
+    CONNECTION_STATUS_CONNECTED = 2;
+    CONNECTION_STATUS_AUTHENTICATING = 3;
+    CONNECTION_STATUS_AUTHENTICATED = 4;
+    CONNECTION_STATUS_ERROR = 5;
+    CONNECTION_STATUS_CLOSING = 6;
+    CONNECTION_STATUS_CLOSED = 7;
+}
+
+enum AuthenticationMethod {
+    AUTHENTICATION_METHOD_UNSPECIFIED = 0;
+    AUTHENTICATION_METHOD_TOKEN = 1;
+    AUTHENTICATION_METHOD_CERTIFICATE = 2;
+    AUTHENTICATION_METHOD_SERVICE_ACCOUNT = 3;
+    AUTHENTICATION_METHOD_API_KEY = 4;
+}
+
+enum HealthStatus {
+    HEALTH_STATUS_UNSPECIFIED = 0;
+    HEALTH_STATUS_HEALTHY = 1;
+    HEALTH_STATUS_DEGRADED = 2;
+    HEALTH_STATUS_UNHEALTHY = 3;
+    HEALTH_STATUS_UNKNOWN = 4;
+}
+
+enum CompressionMethod {
+    COMPRESSION_METHOD_UNSPECIFIED = 0;
+    COMPRESSION_METHOD_NONE = 1;
+    COMPRESSION_METHOD_GZIP = 2;
+    COMPRESSION_METHOD_LZ4 = 3;
+    COMPRESSION_METHOD_SNAPPY = 4;
+    COMPRESSION_METHOD_BROTLI = 5;
+}
+
+enum LoadBalancingStrategy {
+    LOAD_BALANCING_STRATEGY_UNSPECIFIED = 0;
+    LOAD_BALANCING_STRATEGY_ROUND_ROBIN = 1;
+    LOAD_BALANCING_STRATEGY_WEIGHTED_ROUND_ROBIN = 2;
+    LOAD_BALANCING_STRATEGY_LEAST_CONNECTIONS = 3;
+    LOAD_BALANCING_STRATEGY_WEIGHTED_LEAST_CONNECTIONS = 4;
+    LOAD_BALANCING_STRATEGY_LEAST_RESPONSE_TIME = 5;
+    LOAD_BALANCING_STRATEGY_CONSISTENT_HASH = 6;
+    LOAD_BALANCING_STRATEGY_RANDOM = 7;
+}
+
+enum IssueType {
+    ISSUE_TYPE_UNSPECIFIED = 0;
+    ISSUE_TYPE_NETWORK = 1;
+    ISSUE_TYPE_AUTHENTICATION = 2;
+    ISSUE_TYPE_AUTHORIZATION = 3;
+    ISSUE_TYPE_PERFORMANCE = 4;
+    ISSUE_TYPE_RESOURCE = 5;
+    ISSUE_TYPE_PROTOCOL = 6;
+}
+
+enum IssueSeverity {
+    ISSUE_SEVERITY_UNSPECIFIED = 0;
+    ISSUE_SEVERITY_INFO = 1;
+    ISSUE_SEVERITY_WARNING = 2;
+    ISSUE_SEVERITY_ERROR = 3;
+    ISSUE_SEVERITY_CRITICAL = 4;
+}

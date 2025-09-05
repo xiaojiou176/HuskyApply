@@ -1,0 +1,553 @@
+# Enhanced RabbitMQ High Availability Cluster Configuration
+# Supports automatic failover, split-brain resolution, and production-grade durability
+
+apiVersion: v1
+kind: StorageClass
+metadata:
+  name: rabbitmq-ha-storage
+provisioner: kubernetes.io/aws-ebs
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
+  fsType: ext4
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain  # Retain data for disaster recovery
+---
+# PersistentVolumeClaim template is now in StatefulSet
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq-ha
+  namespace: huskyapply
+  labels:
+    app: rabbitmq
+    component: messaging
+    tier: infrastructure
+spec:
+  serviceName: rabbitmq-headless
+  replicas: 5  # Increased to 5 for better availability (supports 2 node failures)
+  podManagementPolicy: Parallel  # Faster cluster formation
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0  # Update all pods
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        version: v3.12
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15692"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Pod anti-affinity to spread RabbitMQ nodes across different nodes
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values: [rabbitmq]
+            topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: [rabbitmq]
+              topologyKey: topology.kubernetes.io/zone
+      # Termination grace period for clean shutdown
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: rabbitmq
+        image: rabbitmq:3.12-management-alpine
+        ports:
+        - containerPort: 5672
+          name: amqp
+          protocol: TCP
+        - containerPort: 15672
+          name: management
+          protocol: TCP
+        - containerPort: 25672
+          name: clustering
+          protocol: TCP
+        - containerPort: 15692
+          name: prometheus
+          protocol: TCP
+        - containerPort: 4369
+          name: epmd
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: rabbitmq-config
+        - secretRef:
+            name: rabbitmq-secrets
+        env:
+        # Core clustering configuration
+        - name: RABBITMQ_USE_LONGNAME
+          value: "true"
+        - name: RABBITMQ_NODENAME
+          value: "rabbit@$(hostname -f).rabbitmq-headless.huskyapply.svc.cluster.local"
+        - name: K8S_SERVICE_NAME
+          value: "rabbitmq-headless"
+        - name: K8S_HOSTNAME_SUFFIX
+          value: ".rabbitmq-headless.huskyapply.svc.cluster.local"
+        - name: RABBITMQ_CLUSTER_FORMATION_K8S_SERVICE_NAME
+          value: "$(K8S_SERVICE_NAME)"
+        
+        # Enhanced plugins for production
+        - name: RABBITMQ_PLUGINS
+          value: "rabbitmq_management,rabbitmq_peer_discovery_k8s,rabbitmq_prometheus,rabbitmq_shovel,rabbitmq_shovel_management,rabbitmq_federation,rabbitmq_federation_management"
+        
+        # Performance and reliability optimizations
+        - name: RABBITMQ_VM_MEMORY_HIGH_WATERMARK
+          value: "0.6"  # Use 60% of available memory
+        - name: RABBITMQ_DISK_FREE_LIMIT
+          value: "2GB"  # Reserve 2GB of disk space
+        - name: RABBITMQ_LOG_LEVEL
+          value: "info"
+        - name: RABBITMQ_HEARTBEAT
+          value: "60"   # 60 second heartbeat for reliability
+        - name: RABBITMQ_HIPE_COMPILE
+          value: "false" # Disable HiPE for stability
+        
+        # High availability configuration
+        - name: RABBITMQ_CLUSTER_PARTITION_HANDLING
+          value: "autoheal"
+        - name: RABBITMQ_QUEUE_MASTER_LOCATOR
+          value: "balanced"  # Better load distribution than min-masters
+        volumeMounts:
+        - name: rabbitmq-storage
+          mountPath: /var/lib/rabbitmq
+        - name: rabbitmq-config-volume
+          mountPath: /etc/rabbitmq
+        resources:
+          requests:
+            memory: "1Gi"    # Increased for clustering overhead
+            cpu: "500m"      # More CPU for message processing
+          limits:
+            memory: "2Gi"    # Higher limit for peak loads
+            cpu: "1000m"     # Allow burst capacity
+        # Enhanced health checks for clustering
+        livenessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - "rabbitmq-diagnostics -q ping && rabbitmq-diagnostics -q check_running"
+          initialDelaySeconds: 120  # Extended for cluster formation
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms"
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        # Startup probe for cluster formation
+        startupProbe:
+          exec:
+            command:
+            - rabbitmq-diagnostics
+            - -q
+            - ping
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30  # Allow 5 minutes for startup
+          successThreshold: 1
+      volumes:
+      - name: rabbitmq-config-volume
+        configMap:
+          name: rabbitmq-ha-config
+          defaultMode: 0755
+      # Add init container for cluster readiness
+      initContainers:
+      - name: rabbitmq-init
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for DNS resolution of rabbitmq-headless..."
+          while ! nslookup rabbitmq-headless.huskyapply.svc.cluster.local; do
+            echo "Waiting for DNS..."
+            sleep 2
+          done
+          echo "DNS resolution successful"
+      serviceAccountName: rabbitmq
+  # Persistent Volume Claim Template for StatefulSet
+  volumeClaimTemplates:
+  - metadata:
+      name: rabbitmq-storage
+      labels:
+        app: rabbitmq
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: rabbitmq-ha-storage
+      resources:
+        requests:
+          storage: 20Gi  # Increased storage for production
+---
+# Headless service for cluster formation
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-headless
+  namespace: huskyapply
+  labels:
+    app: rabbitmq
+    component: messaging
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+  - name: amqp
+    port: 5672
+    targetPort: 5672
+  - name: management
+    port: 15672
+    targetPort: 15672
+  - name: prometheus
+    port: 15692
+    targetPort: 15692
+  - name: clustering
+    port: 25672
+    targetPort: 25672
+  - name: epmd
+    port: 4369
+    targetPort: 4369
+  type: ClusterIP
+  clusterIP: None  # Headless service for DNS-based discovery
+---
+# Load balancer service for client connections
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-service
+  namespace: huskyapply
+  labels:
+    app: rabbitmq
+    component: messaging
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+  - name: amqp
+    port: 5672
+    targetPort: 5672
+    protocol: TCP
+  sessionAffinity: None
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-management
+  namespace: huskyapply
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+  - name: management
+    port: 15672
+    targetPort: 15672
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rabbitmq
+  namespace: huskyapply
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rabbitmq
+  namespace: huskyapply
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rabbitmq
+  namespace: huskyapply
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rabbitmq
+subjects:
+- kind: ServiceAccount
+  name: rabbitmq
+  namespace: huskyapply
+---
+# Pod Disruption Budget for RabbitMQ cluster availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rabbitmq-pdb
+  namespace: huskyapply
+  labels:
+    app: rabbitmq
+spec:
+  selector:
+    matchLabels:
+      app: rabbitmq
+  minAvailable: 3  # Always keep at least 3 nodes running (quorum)
+  # This allows maximum 2 nodes to be disrupted simultaneously
+  unhealthyPodEvictionPolicy: IfHealthyBudget
+---
+# Network Policy for RabbitMQ cluster security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-network-policy
+  namespace: huskyapply
+spec:
+  podSelector:
+    matchLabels:
+      app: rabbitmq
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow connections from Gateway and Brain services
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gateway
+    - podSelector:
+        matchLabels:
+          app: brain
+    ports:
+    - protocol: TCP
+      port: 5672
+  # Allow management interface access
+  - from:
+    - podSelector:
+        matchLabels:
+          app: monitoring
+    ports:
+    - protocol: TCP
+      port: 15672
+    - protocol: TCP
+      port: 15692
+  # Allow inter-cluster communication
+  - from:
+    - podSelector:
+        matchLabels:
+          app: rabbitmq
+    ports:
+    - protocol: TCP
+      port: 25672
+    - protocol: TCP
+      port: 4369
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow Kubernetes API access
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow inter-cluster communication
+  - to:
+    - podSelector:
+        matchLabels:
+          app: rabbitmq
+    ports:
+    - protocol: TCP
+      port: 25672
+    - protocol: TCP
+      port: 4369
+---
+# ServiceMonitor for Prometheus integration
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rabbitmq-servicemonitor
+  namespace: huskyapply
+  labels:
+    app: rabbitmq
+    component: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: rabbitmq
+  endpoints:
+  - port: prometheus
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+  namespaceSelector:
+    matchNames:
+    - huskyapply
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-ha-config
+  namespace: huskyapply
+  labels:
+    app: rabbitmq
+data:
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_peer_discovery_k8s,rabbitmq_prometheus,rabbitmq_shovel,rabbitmq_shovel_management,rabbitmq_federation,rabbitmq_federation_management].
+  rabbitmq.conf: |
+    # Cluster Formation Configuration
+    cluster_formation.peer_discovery_backend = rabbit_peer_discovery_k8s
+    cluster_formation.k8s.host = kubernetes.default.svc.cluster.local
+    cluster_formation.k8s.address_type = hostname
+    cluster_formation.k8s.service_name = rabbitmq-headless
+    cluster_formation.k8s.hostname_suffix = .rabbitmq-headless.huskyapply.svc.cluster.local
+    cluster_formation.node_cleanup.interval = 10
+    cluster_formation.node_cleanup.only_log_warning = false
+    cluster_formation.randomized_startup_delay_range.min = 0
+    cluster_formation.randomized_startup_delay_range.max = 30
+    
+    # High Availability and Partition Handling
+    cluster_partition_handling = autoheal
+    cluster_keepalive_interval = 10000
+    net_ticktime = 60
+    
+    # Queue Configuration for HA
+    queue_master_locator = balanced
+    ha_promote_on_shutdown = when_synced
+    ha_promote_on_failure = when_synced
+    
+    # Network and Connection Settings
+    listeners.tcp.default = 5672
+    num_acceptors.tcp = 10
+    tcp_listen_options.backlog = 128
+    tcp_listen_options.nodelay = true
+    tcp_listen_options.linger.on = true
+    tcp_listen_options.linger.timeout = 0
+    
+    # Management Interface
+    management.tcp.port = 15672
+    management.tcp.ip = 0.0.0.0
+    management.http_log_dir = /var/log/rabbitmq
+    
+    # Monitoring and Metrics
+    prometheus.tcp.port = 15692
+    prometheus.path = /metrics
+    management.rates_mode = basic
+    
+    # Memory and Disk Management
+    vm_memory_high_watermark.relative = 0.6
+    vm_memory_calculation_strategy = rss
+    disk_free_limit.absolute = 2GB
+    
+    # Authentication and Security
+    loopback_users.guest = false
+    default_user = admin
+    default_pass = CHANGE_ME_IN_PRODUCTION
+    
+    # Logging Configuration
+    log.console = true
+    log.console.level = info
+    log.file = /var/log/rabbitmq/rabbit.log
+    log.file.level = info
+    log.file.rotation.date = $D0
+    log.file.rotation.size = 100MB
+    
+    # Performance Optimizations
+    channel_max = 2047
+    connection_max = 65535
+    heartbeat = 60
+    frame_max = 131072
+    collect_statistics = coarse
+    collect_statistics_interval = 10000
+  
+  # Policy definitions for HA queues
+  definitions.json: |
+    {
+      "policies": [
+        {
+          "vhost": "/",
+          "name": "ha-all-queues",
+          "pattern": ".*",
+          "apply-to": "all",
+          "definition": {
+            "ha-mode": "exactly",
+            "ha-params": 3,
+            "ha-sync-mode": "automatic",
+            "message-ttl": 1800000,
+            "expires": 3600000
+          },
+          "priority": 0
+        }
+      ],
+      "users": [
+        {
+          "name": "admin",
+          "password_hash": "CHANGE_ME_IN_PRODUCTION",
+          "hashing_algorithm": "rabbit_password_hashing_sha256",
+          "tags": "administrator"
+        },
+        {
+          "name": "huskyapply",
+          "password_hash": "CHANGE_ME_IN_PRODUCTION",
+          "hashing_algorithm": "rabbit_password_hashing_sha256",
+          "tags": "management"
+        }
+      ],
+      "vhosts": [
+        {
+          "name": "/"
+        }
+      ],
+      "permissions": [
+        {
+          "user": "admin",
+          "vhost": "/",
+          "configure": ".*",
+          "write": ".*",
+          "read": ".*"
+        },
+        {
+          "user": "huskyapply",
+          "vhost": "/",
+          "configure": "huskyapply.*",
+          "write": "huskyapply.*",
+          "read": "huskyapply.*"
+        }
+      ]
+    }

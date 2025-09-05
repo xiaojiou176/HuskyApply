@@ -1,0 +1,248 @@
+# Prometheus Adapter Configuration for Custom HPA Metrics
+# This enables Kubernetes to use custom Prometheus metrics for autoscaling
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-config
+  namespace: monitoring
+data:
+  config.yaml: |
+    rules:
+    # HTTP request rate metrics for Gateway
+    - seriesQuery: 'http_requests_total{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: {resource: "namespace"}
+          pod: {resource: "pod"}
+      name:
+        matches: "^http_requests_total"
+        as: "http_requests_per_second"
+      metricsQuery: 'rate(<<.Series>>{<<.LabelMatchers>>}[2m])'
+    
+    # Job queue depth for Gateway
+    - seriesQuery: 'huskyapply_jobs_pending_total{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: {resource: "namespace"}
+          pod: {resource: "pod"}
+      name:
+        matches: "^huskyapply_jobs_pending_total"
+        as: "job_queue_depth"
+      metricsQuery: '<<.Series>>{<<.LabelMatchers>>}'
+    
+    # Response latency P95 for Gateway
+    - seriesQuery: 'http_request_duration_seconds{namespace!="",pod!="",quantile="0.95"}'
+      resources:
+        overrides:
+          namespace: {resource: "namespace"}
+          pod: {resource: "pod"}
+      name:
+        matches: "^http_request_duration_seconds"
+        as: "response_latency_p95"
+      metricsQuery: '<<.Series>>{<<.LabelMatchers>>}'
+    
+    # AI processing queue depth for Brain
+    - seriesQuery: 'huskyapply_ai_queue_depth{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: {resource: "namespace"}
+          pod: {resource: "pod"}
+      name:
+        matches: "^huskyapply_ai_queue_depth"
+        as: "ai_processing_queue_depth"
+      metricsQuery: '<<.Series>>{<<.LabelMatchers>>}'
+    
+    # AI processing duration P90 for Brain
+    - seriesQuery: 'huskyapply_ai_processing_duration_seconds{namespace!="",pod!="",quantile="0.90"}'
+      resources:
+        overrides:
+          namespace: {resource: "namespace"}
+          pod: {resource: "pod"}
+      name:
+        matches: "^huskyapply_ai_processing_duration_seconds"
+        as: "ai_processing_duration_p90"
+      metricsQuery: '<<.Series>>{<<.LabelMatchers>>}'
+    
+    # RabbitMQ messages ready
+    - seriesQuery: 'rabbitmq_queue_messages_ready{namespace!="",queue="job_processing"}'
+      resources:
+        overrides:
+          namespace: {resource: "namespace"}
+      name:
+        matches: "^rabbitmq_queue_messages_ready"
+        as: "rabbitmq_messages_ready"
+      metricsQuery: '<<.Series>>{<<.LabelMatchers>>}'
+    
+    # External metrics from load balancer
+    externalRules:
+    - seriesQuery: 'nginx_ingress_controller_requests{service="gateway-service"}'
+      resources:
+        template: <<.Resource>>
+      name:
+        matches: "^nginx_ingress_controller_requests"
+        as: "requests_per_second"
+      metricsQuery: 'rate(<<.Series>>{<<.LabelMatchers>>}[2m])'
+
+---
+# Prometheus Adapter Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-adapter
+  namespace: monitoring
+  labels:
+    app: prometheus-adapter
+spec:
+  replicas: 2  # HA setup
+  selector:
+    matchLabels:
+      app: prometheus-adapter
+  template:
+    metadata:
+      labels:
+        app: prometheus-adapter
+    spec:
+      serviceAccountName: prometheus-adapter
+      containers:
+      - name: prometheus-adapter
+        image: k8s.gcr.io/prometheus-adapter/prometheus-adapter:v0.11.0
+        args:
+        - --cert-dir=/tmp/cert
+        - --secure-port=6443
+        - --prometheus-url=http://prometheus.monitoring.svc:9090/
+        - --metrics-relist-interval=30s
+        - --v=2
+        - --config=/etc/adapter/config.yaml
+        ports:
+        - containerPort: 6443
+          name: https
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/adapter/
+          readOnly: true
+        - name: tmp-vol
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-adapter-config
+      - name: tmp-vol
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-adapter
+  namespace: monitoring
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-adapter
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - nodes/stats
+  - services
+  - endpoints
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - "custom.metrics.k8s.io"
+  resources:
+  - "*"
+  verbs:
+  - "*"
+- apiGroups:
+  - "external.metrics.k8s.io"
+  resources:
+  - "*"
+  verbs:
+  - "*"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-adapter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-adapter
+subjects:
+- kind: ServiceAccount
+  name: prometheus-adapter
+  namespace: monitoring
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-adapter
+  namespace: monitoring
+spec:
+  ports:
+  - name: https
+    port: 443
+    targetPort: 6443
+  selector:
+    app: prometheus-adapter
+
+---
+apiVersion: apiregistration.k8s.io/v1beta1
+kind: APIService
+metadata:
+  name: v1beta1.custom.metrics.k8s.io
+spec:
+  service:
+    name: prometheus-adapter
+    namespace: monitoring
+  group: custom.metrics.k8s.io
+  version: v1beta1
+  insecureSkipTLSVerify: true
+  groupPriorityMinimum: 100
+  versionPriority: 100
+
+---
+apiVersion: apiregistration.k8s.io/v1beta1
+kind: APIService
+metadata:
+  name: v1beta1.external.metrics.k8s.io
+spec:
+  service:
+    name: prometheus-adapter
+    namespace: monitoring
+  group: external.metrics.k8s.io
+  version: v1beta1
+  insecureSkipTLSVerify: true
+  groupPriorityMinimum: 100
+  versionPriority: 100

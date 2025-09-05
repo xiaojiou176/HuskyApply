@@ -1,0 +1,551 @@
+# HuskyApply Enhanced Monitoring Configuration
+# Supporting Job Tracking and Resume Analysis Features
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: huskyapply
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'huskyapply-production'
+        environment: 'production'
+    
+    rule_files:
+      - "/etc/prometheus/rules/*.yml"
+    
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - alertmanager:9093
+    
+    scrape_configs:
+      # Gateway Service Metrics
+      - job_name: 'gateway'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['huskyapply']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: gateway
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: ${1}:${2}
+            target_label: __address__
+        metrics_path: /actuator/prometheus
+        scrape_interval: 10s
+        scrape_timeout: 8s
+      
+      # Brain Service Metrics
+      - job_name: 'brain'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['huskyapply']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: brain
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+        metrics_path: /metrics
+        scrape_interval: 10s
+        scrape_timeout: 8s
+      
+      # PostgreSQL Metrics
+      - job_name: 'postgres'
+        static_configs:
+          - targets: ['postgres-exporter:9187']
+        scrape_interval: 15s
+        metrics_path: /metrics
+      
+      # RabbitMQ Metrics
+      - job_name: 'rabbitmq'
+        static_configs:
+          - targets: ['rabbitmq-exporter:9419']
+        scrape_interval: 15s
+      
+      # Redis Metrics
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis-exporter:9121']
+        scrape_interval: 15s
+      
+      # Node Exporter for Infrastructure
+      - job_name: 'node'
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - source_labels: [__address__]
+            regex: '(.*):10250'
+            target_label: __address__
+            replacement: '${1}:9100'
+          - source_labels: [__meta_kubernetes_node_label_kubernetes_io_hostname]
+            target_label: hostname
+        scrape_interval: 15s
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alerting-rules
+  namespace: huskyapply
+data:
+  huskyapply-rules.yml: |
+    groups:
+    - name: huskyapply.gateway
+      rules:
+      # Gateway Performance Alerts
+      - alert: GatewayHighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="gateway"}[5m])) > 1
+        for: 3m
+        labels:
+          severity: warning
+          service: gateway
+        annotations:
+          summary: "Gateway API latency is high"
+          description: "Gateway 95th percentile latency is {{ $value }}s"
+      
+      - alert: GatewayHighErrorRate
+        expr: rate(http_requests_total{job="gateway",status=~"5.."}[5m]) / rate(http_requests_total{job="gateway"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: gateway
+        annotations:
+          summary: "Gateway error rate is high"
+          description: "Gateway error rate is {{ $value | humanizePercentage }}"
+      
+      # Job Tracking Specific Alerts
+      - alert: JobTrackingAPISlowResponse
+        expr: histogram_quantile(0.90, rate(http_request_duration_seconds_bucket{job="gateway",uri=~"/api/jobs.*"}[5m])) > 2
+        for: 3m
+        labels:
+          severity: warning
+          feature: job_tracking
+        annotations:
+          summary: "Job tracking API response time degraded"
+          description: "Job tracking API 90th percentile response time is {{ $value }}s"
+      
+      - alert: JobTrackingDashboardCacheExpired
+        expr: increase(job_tracking_dashboard_cache_misses_total[10m]) / increase(job_tracking_dashboard_cache_requests_total[10m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          feature: job_tracking
+        annotations:
+          summary: "Job tracking dashboard cache miss rate is high"
+          description: "Cache miss rate is {{ $value | humanizePercentage }}, consider refreshing materialized views"
+    
+    - name: huskyapply.brain
+      rules:
+      # AI Processing Alerts
+      - alert: ResumeAnalysisQueueBacklog
+        expr: rabbitmq_queue_messages{queue=~".*resume_analysis.*"} > 50
+        for: 5m
+        labels:
+          severity: warning
+          feature: resume_analysis
+        annotations:
+          summary: "Resume analysis queue has significant backlog"
+          description: "Resume analysis queue has {{ $value }} pending messages"
+      
+      - alert: AIProcessingTimeout
+        expr: rate(ai_processing_timeout_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: critical
+          feature: ai_processing
+        annotations:
+          summary: "High rate of AI processing timeouts"
+          description: "AI processing timeout rate is {{ $value }} per second"
+      
+      - alert: BrainServiceMemoryPressure
+        expr: container_memory_usage_bytes{pod=~"brain-.*"} / container_spec_memory_limit_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: brain
+        annotations:
+          summary: "Brain service memory usage is high"
+          description: "Memory usage is {{ $value | humanizePercentage }} of limit"
+      
+      - alert: ModelLoadingFailure
+        expr: increase(ai_model_loading_errors_total[10m]) > 3
+        for: 2m
+        labels:
+          severity: critical
+          feature: ai_processing
+        annotations:
+          summary: "AI model loading failures detected"
+          description: "{{ $value }} model loading failures in the last 10 minutes"
+    
+    - name: huskyapply.database
+      rules:
+      # Database Performance
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_database_numbackends > 160
+        for: 3m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: "PostgreSQL connection count is high"
+          description: "Current connections: {{ $value }}/200"
+      
+      - alert: DatabaseSlowQueries
+        expr: pg_stat_activity_max_tx_duration > 300
+        for: 2m
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: "Long-running database queries detected"
+          description: "Longest transaction duration: {{ $value }}s"
+      
+      - alert: MaterializedViewStale
+        expr: (time() - pg_stat_user_tables_last_vacuum{relname="job_tracking_dashboard"}) > 7200
+        for: 10m
+        labels:
+          severity: warning
+          feature: job_tracking
+        annotations:
+          summary: "Job tracking dashboard materialized view is stale"
+          description: "Materialized view last refreshed {{ $value | humanizeDuration }} ago"
+      
+      # Database Storage
+      - alert: DatabaseStorageLow
+        expr: pg_database_size_bytes / (1024^3) > 80  # 80GB threshold
+        for: 5m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: "Database storage usage is approaching limit"
+          description: "Database size is {{ $value }}GB"
+    
+    - name: huskyapply.business
+      rules:
+      # Business Logic Alerts
+      - alert: UserRegistrationDrop
+        expr: rate(user_registrations_total[1h]) < 0.5  # Less than 0.5 registrations per second
+        for: 15m
+        labels:
+          severity: warning
+          business: user_growth
+        annotations:
+          summary: "User registration rate has dropped significantly"
+          description: "Registration rate is {{ $value }} per second (expected > 0.5)"
+      
+      - alert: ResumeUploadFailureRate
+        expr: rate(resume_upload_failures_total[10m]) / rate(resume_upload_attempts_total[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          feature: resume_upload
+        annotations:
+          summary: "High rate of resume upload failures"
+          description: "Failure rate is {{ $value | humanizePercentage }}"
+      
+      - alert: TrialModeConversionLow
+        expr: rate(trial_to_paid_conversions_total[24h]) / rate(trial_mode_activations_total[24h]) < 0.05
+        for: 2h
+        labels:
+          severity: info
+          business: conversion
+        annotations:
+          summary: "Trial mode conversion rate is below target"
+          description: "24h conversion rate is {{ $value | humanizePercentage }}"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: huskyapply
+data:
+  huskyapply-overview.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "HuskyApply Platform Overview",
+        "tags": ["huskyapply", "overview"],
+        "timezone": "UTC",
+        "refresh": "30s",
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "Service Health Overview",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "up{job=~\"gateway|brain\"}",
+                "legendFormat": "{{job}} - {{instance}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{job=\"gateway\"}[5m])",
+                "legendFormat": "Gateway - {{method}} {{uri}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Job Tracking Dashboard Usage",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{job=\"gateway\",uri=~\"/api/jobs.*\"}[5m])",
+                "legendFormat": "Job Tracking API - {{method}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "Resume Analysis Queue Depth",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rabbitmq_queue_messages{queue=~\".*resume_analysis.*\"}",
+                "legendFormat": "{{queue}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+          },
+          {
+            "id": 5,
+            "title": "AI Processing Metrics",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(ai_processing_duration_seconds_sum[5m]) / rate(ai_processing_duration_seconds_count[5m])",
+                "legendFormat": "Average Processing Time"
+              },
+              {
+                "expr": "rate(ai_processing_total[5m])",
+                "legendFormat": "Processing Rate"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+          }
+        ]
+      }
+    }
+  
+  job-tracking-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Job Tracking System Metrics",
+        "tags": ["huskyapply", "job-tracking"],
+        "timezone": "UTC",
+        "refresh": "15s",
+        "time": {
+          "from": "now-4h",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "Active Job Applications",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(job_applications_total{status!=\"archived\"})",
+                "legendFormat": "Active Applications"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Interview Scheduling Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(interviews_scheduled_total[1h])",
+                "legendFormat": "Interviews/hour"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Dashboard Cache Performance",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(job_tracking_dashboard_cache_requests_total[5m])",
+                "legendFormat": "Cache Requests"
+              },
+              {
+                "expr": "rate(job_tracking_dashboard_cache_hits_total[5m])",
+                "legendFormat": "Cache Hits"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+          }
+        ]
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: huskyapply
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        args:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+          - '--storage.tsdb.retention.time=30d'
+          - '--web.console.libraries=/etc/prometheus/console_libraries'
+          - '--web.console.templates=/etc/prometheus/consoles'
+          - '--web.enable-lifecycle'
+          - '--web.enable-admin-api'
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus
+        - name: prometheus-storage
+          mountPath: /prometheus
+        - name: alerting-rules
+          mountPath: /etc/prometheus/rules
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "3Gi"
+            cpu: "1000m"
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: prometheus-config
+      - name: alerting-rules
+        configMap:
+          name: alerting-rules
+      - name: prometheus-storage
+        persistentVolumeClaim:
+          claimName: prometheus-storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: huskyapply
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: huskyapply
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "huskyapply2024"
+        - name: GF_PATHS_PROVISIONING
+          value: "/etc/grafana/provisioning"
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-piechart-panel,grafana-worldmap-panel"
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        - name: grafana-dashboards
+          mountPath: /etc/grafana/provisioning/dashboards
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: grafana-storage
+        persistentVolumeClaim:
+          claimName: grafana-storage
+      - name: grafana-dashboards
+        configMap:
+          name: grafana-dashboards
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: huskyapply
+spec:
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: LoadBalancer

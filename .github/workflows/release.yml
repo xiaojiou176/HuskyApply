@@ -1,0 +1,448 @@
+name: 🎯 Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Semantic versioning tags
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ==================== VALIDATE RELEASE ====================
+  validate-release:
+    name: 🔍 Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is-prerelease: ${{ steps.version.outputs.prerelease }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          if [[ $VERSION == *"alpha"* ]] || [[ $VERSION == *"beta"* ]] || [[ $VERSION == *"rc"* ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate semantic version
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9\-\.]+)?$ ]]; then
+            echo "Invalid semantic version: $VERSION"
+            exit 1
+          fi
+
+      - name: Check changelog
+        run: |
+          if ! grep -q "${{ steps.version.outputs.version }}" CHANGELOG.md; then
+            echo "Version ${{ steps.version.outputs.version }} not found in CHANGELOG.md"
+            exit 1
+          fi
+
+  # ==================== BUILD RELEASE ARTIFACTS ====================
+  build-gateway:
+    name: 🌐 Build Gateway Release
+    runs-on: ubuntu-latest
+    needs: validate-release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build Gateway
+        working-directory: ./gateway
+        run: |
+          mvn clean package -DskipTests
+          mvn spotless:apply
+          mvn javadoc:javadoc
+
+      - name: Create Gateway artifacts
+        run: |
+          mkdir -p release-artifacts/gateway
+          cp gateway/target/*.jar release-artifacts/gateway/
+          cp -r gateway/target/site/apidocs release-artifacts/gateway/
+          
+          # Create deployment package
+          tar -czf release-artifacts/huskyapply-gateway-${{ needs.validate-release.outputs.version }}.tar.gz \
+            -C release-artifacts gateway
+
+      - name: Upload Gateway artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: gateway-release-${{ needs.validate-release.outputs.version }}
+          path: release-artifacts/
+
+  build-brain:
+    name: 🧠 Build Brain Release
+    runs-on: ubuntu-latest
+    needs: validate-release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Build Brain package
+        working-directory: ./brain
+        run: |
+          uv sync --extra prod
+          uv build
+          uv run python -m pip wheel . -w wheels/
+
+      - name: Create Brain artifacts
+        run: |
+          mkdir -p release-artifacts/brain
+          cp brain/dist/* release-artifacts/brain/
+          cp -r brain/wheels release-artifacts/brain/
+          
+          # Create deployment package
+          tar -czf release-artifacts/huskyapply-brain-${{ needs.validate-release.outputs.version }}.tar.gz \
+            -C release-artifacts brain
+
+      - name: Upload Brain artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: brain-release-${{ needs.validate-release.outputs.version }}
+          path: release-artifacts/
+
+  build-frontend:
+    name: 🎨 Build Frontend Release
+    runs-on: ubuntu-latest
+    needs: validate-release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Frontend
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+          npm run optimize
+
+      - name: Create Frontend artifacts
+        run: |
+          mkdir -p release-artifacts/frontend
+          cp -r frontend/dist/* release-artifacts/frontend/
+          
+          # Create deployment package
+          tar -czf release-artifacts/huskyapply-frontend-${{ needs.validate-release.outputs.version }}.tar.gz \
+            -C release-artifacts frontend
+
+      - name: Upload Frontend artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-release-${{ needs.validate-release.outputs.version }}
+          path: release-artifacts/
+
+
+  # ==================== BUILD DOCKER IMAGES ====================
+  build-release-images:
+    name: 🐳 Build Release Images
+    runs-on: ubuntu-latest
+    needs: [validate-release, build-gateway, build-brain]
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service: [gateway, brain]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+            huskyapply/${{ matrix.service }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==================== CREATE HELM CHARTS ====================
+  build-helm-charts:
+    name: ⎈ Build Helm Charts
+    runs-on: ubuntu-latest
+    needs: validate-release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.13.0'
+
+      - name: Update chart versions
+        run: |
+          VERSION=${{ needs.validate-release.outputs.version }}
+          
+          # Update Gateway chart
+          sed -i "s/version: .*/version: $VERSION/" infra/k8s/helm/gateway/Chart.yaml
+          sed -i "s/appVersion: .*/appVersion: $VERSION/" infra/k8s/helm/gateway/Chart.yaml
+          
+          # Update Brain chart
+          sed -i "s/version: .*/version: $VERSION/" infra/k8s/helm/brain/Chart.yaml
+          sed -i "s/appVersion: .*/appVersion: $VERSION/" infra/k8s/helm/brain/Chart.yaml
+
+      - name: Package Helm charts
+        run: |
+          mkdir -p helm-releases
+          
+          helm package infra/k8s/helm/gateway -d helm-releases
+          helm package infra/k8s/helm/brain -d helm-releases
+          
+          # Create index
+          helm repo index helm-releases
+
+      - name: Upload Helm charts
+        uses: actions/upload-artifact@v3
+        with:
+          name: helm-charts-${{ needs.validate-release.outputs.version }}
+          path: helm-releases/
+
+  # ==================== GENERATE DOCUMENTATION ====================
+  generate-docs:
+    name: 📚 Generate Documentation
+    runs-on: ubuntu-latest
+    needs: validate-release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js for docs
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install documentation tools
+        run: |
+          npm install -g @redocly/openapi-cli
+          npm install -g swagger2openapi
+
+      - name: Generate API documentation
+        run: |
+          mkdir -p docs-release
+          
+          # Generate OpenAPI spec from Spring Boot
+          # This would typically be extracted from running service
+          cp docs/openapi.yaml docs-release/
+          
+          # Generate HTML documentation
+          redocly build docs/openapi.yaml --output docs-release/api.html
+
+
+      - name: Upload documentation
+        uses: actions/upload-artifact@v3
+        with:
+          name: documentation-${{ needs.validate-release.outputs.version }}
+          path: docs-release/
+
+  # ==================== SECURITY SCANNING ====================
+  security-scan-release:
+    name: 🔒 Security Scan Release
+    runs-on: ubuntu-latest
+    needs: build-release-images
+
+    steps:
+      - name: Run Trivy on release images
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-gateway:${{ needs.validate-release.outputs.version }}'
+          format: 'sarif'
+          output: 'gateway-security.sarif'
+
+      - name: Upload security results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'gateway-security.sarif'
+
+  # ==================== DEPLOY TO PRODUCTION ====================
+  deploy-production-release:
+    name: 🚀 Deploy Production Release
+    runs-on: ubuntu-latest
+    needs: [build-release-images, build-helm-charts, security-scan-release]
+    if: needs.validate-release.outputs.is-prerelease == 'false'
+    environment:
+      name: production
+      url: https://api.huskyapply.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy to production
+        run: |
+          aws eks update-kubeconfig --name huskyapply-production
+          ./scripts/deploy-release.sh ${{ needs.validate-release.outputs.version }}
+
+      - name: Run post-deployment tests
+        run: |
+          ./scripts/health-check.sh --environment=production --timeout=600
+          ./scripts/smoke-tests.sh production
+
+  # ==================== UPDATE GITHUB RELEASE ====================
+  update-github-release:
+    name: 📋 Update GitHub Release
+    runs-on: ubuntu-latest
+    needs: [
+      build-gateway,
+      build-brain, 
+      build-frontend,
+      build-helm-charts,
+      generate-docs,
+      deploy-production-release
+    ]
+    if: always() && !cancelled()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: release-assets/
+
+      - name: Generate release notes
+        run: |
+          VERSION=${{ needs.validate-release.outputs.version }}
+          
+          # Extract changelog for this version
+          awk "/## \[$VERSION\]/,/## \[/ {if (/## \[/ && !/## \[$VERSION\]/) exit; print}" CHANGELOG.md > release-notes.md
+
+      - name: Update GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.validate-release.outputs.version }}
+          name: HuskyApply v${{ needs.validate-release.outputs.version }}
+          body_path: release-notes.md
+          files: |
+            release-assets/**/*.tar.gz
+            release-assets/**/*.tgz
+            release-assets/**/*.jar
+            release-assets/**/*.whl
+          prerelease: ${{ needs.validate-release.outputs.is-prerelease }}
+          generate_release_notes: true
+
+  # ==================== NOTIFICATIONS ====================
+  notify-release:
+    name: 📢 Notify Release
+    runs-on: ubuntu-latest
+    needs: [update-github-release]
+    if: always()
+
+    steps:
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              "text": "🎉 HuskyApply v${{ needs.validate-release.outputs.version }} Released!",
+              "attachments": [{
+                "color": "good",
+                "fields": [
+                  { "title": "Version", "value": "${{ needs.validate-release.outputs.version }}", "short": true },
+                  { "title": "Pre-release", "value": "${{ needs.validate-release.outputs.is-prerelease }}", "short": true },
+                  { "title": "Release URL", "value": "${{ github.event.release.html_url }}", "short": false }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+      - name: Notify Discord
+        uses: Ilshidur/action-discord@master
+        with:
+          args: |
+            🚀 **HuskyApply v${{ needs.validate-release.outputs.version }}** has been released!
+            
+            📦 **What's New:**
+            • Enhanced CI/CD pipeline
+            • Improved security scanning
+            • Multi-platform Docker images
+            
+            🔗 **Links:**
+            • [GitHub Release](${{ github.event.release.html_url }})
+            • [Documentation](https://docs.huskyapply.com)
+            • [Docker Images](https://github.com/orgs/huskyapply/packages)
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}

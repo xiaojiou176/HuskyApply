@@ -1,0 +1,267 @@
+name: 📈 Performance Tests
+
+on:
+  schedule:
+    # Run performance tests nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of performance test to run'
+        required: true
+        default: 'load'
+        type: choice
+        options:
+        - smoke
+        - load
+        - stress
+        - spike
+        - all
+      environment:
+        description: 'Environment to test against'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+  pull_request:
+    branches: [ main ]
+    types: [ labeled ]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # Only run if PR is labeled with 'performance-test' or on schedule/manual trigger
+  check-trigger:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.check.outputs.should-run }}
+    steps:
+      - name: Check if performance tests should run
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]] || \
+             [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || \
+             [[ "${{ contains(github.event.pull_request.labels.*.name, 'performance-test') }}" == "true" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-run=false" >> $GITHUB_OUTPUT
+          fi
+
+  performance-tests:
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        test-scenario: 
+          - ${{ github.event.inputs.test_type || 'load' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install k6
+        run: |
+          curl https://github.com/grafana/k6/releases/download/v0.47.0/k6-v0.47.0-linux-amd64.tar.gz -L | tar xvz --strip-components 1
+          sudo mv k6 /usr/local/bin
+
+      - name: Create reports directory
+        run: |
+          mkdir -p reports/performance
+          mkdir -p test-data
+
+      - name: Set environment URL
+        id: set-env
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "production" ]]; then
+            echo "BASE_URL=https://api.huskyapply.com" >> $GITHUB_ENV
+          else
+            echo "BASE_URL=https://staging.huskyapply.com" >> $GITHUB_ENV
+          fi
+
+      - name: Wait for service availability
+        run: |
+          echo "🔍 Checking service availability at $BASE_URL"
+          timeout 300 bash -c 'until curl -f "$BASE_URL/actuator/health"; do sleep 5; done'
+
+      - name: Setup test data
+        run: |
+          # Create test users for load testing
+          TEST_USERS=(
+            "loadtest1@huskyapply.com:LoadTest123!"
+            "loadtest2@huskyapply.com:LoadTest123!"
+            "loadtest3@huskyapply.com:LoadTest123!"
+            "loadtest4@huskyapply.com:LoadTest123!"
+            "loadtest5@huskyapply.com:LoadTest123!"
+          )
+          
+          for user_data in "${TEST_USERS[@]}"; do
+            IFS=':' read -r email password <<< "$user_data"
+            curl -s -X POST "$BASE_URL/api/v1/auth/register" \
+              -H "Content-Type: application/json" \
+              -d "{\"email\":\"$email\",\"password\":\"$password\"}" \
+              > /dev/null 2>&1 || true
+          done
+
+      - name: Run performance tests
+        run: |
+          echo "🚀 Running ${{ matrix.test-scenario }} performance test"
+          ./scripts/performance-test-suite.sh ${{ matrix.test-scenario }}
+        env:
+          BASE_URL: ${{ env.BASE_URL }}
+
+      - name: Parse test results
+        id: parse-results
+        run: |
+          # Extract key metrics from the latest test results
+          LATEST_REPORT=$(find reports/performance -name "*.json" -type f | sort -r | head -n 1)
+          
+          if [[ -f "$LATEST_REPORT" ]]; then
+            # Install jq for JSON parsing
+            sudo apt-get update && sudo apt-get install -y jq
+            
+            # Extract metrics
+            AVG_DURATION=$(jq -r '.metrics.http_req_duration.values.avg // "N/A"' "$LATEST_REPORT")
+            P95_DURATION=$(jq -r '.metrics.http_req_duration.values."p(95)" // "N/A"' "$LATEST_REPORT")
+            ERROR_RATE=$(jq -r '.metrics.http_req_failed.values.rate // "N/A"' "$LATEST_REPORT")
+            TOTAL_REQUESTS=$(jq -r '.metrics.http_reqs.values.count // "N/A"' "$LATEST_REPORT")
+            
+            echo "avg-duration=$AVG_DURATION" >> $GITHUB_OUTPUT
+            echo "p95-duration=$P95_DURATION" >> $GITHUB_OUTPUT
+            echo "error-rate=$ERROR_RATE" >> $GITHUB_OUTPUT
+            echo "total-requests=$TOTAL_REQUESTS" >> $GITHUB_OUTPUT
+            
+            # Check if thresholds are met
+            if (( $(echo "$ERROR_RATE > 0.05" | bc -l) )); then
+              echo "threshold-passed=false" >> $GITHUB_OUTPUT
+              echo "❌ Error rate threshold exceeded: $ERROR_RATE"
+            elif (( $(echo "$P95_DURATION > 2000" | bc -l) )); then
+              echo "threshold-passed=false" >> $GITHUB_OUTPUT
+              echo "❌ Response time threshold exceeded: ${P95_DURATION}ms"
+            else
+              echo "threshold-passed=true" >> $GITHUB_OUTPUT
+              echo "✅ All performance thresholds passed"
+            fi
+          else
+            echo "threshold-passed=false" >> $GITHUB_OUTPUT
+            echo "❌ No test results found"
+          fi
+
+      - name: Upload performance reports
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: performance-reports-${{ matrix.test-scenario }}-${{ github.run_number }}
+          path: |
+            reports/performance/
+            !reports/performance/*.json
+          retention-days: 30
+
+      - name: Upload detailed results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: performance-data-${{ matrix.test-scenario }}-${{ github.run_number }}
+          path: reports/performance/*.json
+          retention-days: 30
+
+      - name: Comment on PR (if PR triggered)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const testType = '${{ matrix.test-scenario }}';
+            const environment = '${{ github.event.inputs.environment || 'staging' }}';
+            const avgDuration = '${{ steps.parse-results.outputs.avg-duration }}';
+            const p95Duration = '${{ steps.parse-results.outputs.p95-duration }}';
+            const errorRate = '${{ steps.parse-results.outputs.error-rate }}';
+            const totalRequests = '${{ steps.parse-results.outputs.total-requests }}';
+            const thresholdPassed = '${{ steps.parse-results.outputs.threshold-passed }}';
+            
+            const statusIcon = thresholdPassed === 'true' ? '✅' : '❌';
+            const statusText = thresholdPassed === 'true' ? 'PASSED' : 'FAILED';
+            
+            const comment = `
+            ## ${statusIcon} Performance Test Results - ${statusText}
+            
+            **Test Type:** ${testType}  
+            **Environment:** ${environment}  
+            **Trigger:** Performance test label on PR
+            
+            ### 📊 Key Metrics
+            
+            | Metric | Value | Threshold |
+            |--------|-------|-----------|
+            | Average Response Time | ${avgDuration}ms | - |
+            | 95th Percentile Response Time | ${p95Duration}ms | < 2000ms |
+            | Error Rate | ${errorRate}% | < 5% |
+            | Total Requests | ${totalRequests} | - |
+            
+            ### 📈 Analysis
+            
+            ${thresholdPassed === 'true' 
+              ? '🎉 All performance thresholds were met. The changes in this PR do not introduce performance regressions.'
+              : '⚠️ Some performance thresholds were exceeded. Please review the changes for potential performance impacts.'
+            }
+            
+            ### 📁 Artifacts
+            
+            - Performance reports are available in the workflow artifacts
+            - Detailed JSON results can be found in the performance-data artifacts
+            
+            ---
+            *Automated performance test run #${{ github.run_number }}*
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Fail job if thresholds not met
+        if: steps.parse-results.outputs.threshold-passed == 'false'
+        run: |
+          echo "❌ Performance thresholds were not met"
+          echo "Average Duration: ${{ steps.parse-results.outputs.avg-duration }}ms"
+          echo "95th Percentile: ${{ steps.parse-results.outputs.p95-duration }}ms"
+          echo "Error Rate: ${{ steps.parse-results.outputs.error-rate }}%"
+          exit 1
+
+  # Send Slack notification for scheduled runs
+  notify-results:
+    needs: [check-trigger, performance-tests]
+    if: always() && needs.check-trigger.outputs.should-run == 'true' && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ needs.performance-tests.result }}
+          channel: '#performance'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          custom_payload: |
+            {
+              "text": "${{ needs.performance-tests.result == 'success' && '✅' || '❌' }} Nightly Performance Test Results",
+              "attachments": [{
+                "color": "${{ needs.performance-tests.result == 'success' && 'good' || 'danger' }}",
+                "fields": [
+                  { "title": "Environment", "value": "${{ github.event.inputs.environment || 'staging' }}", "short": true },
+                  { "title": "Test Type", "value": "${{ github.event.inputs.test_type || 'load' }}", "short": true },
+                  { "title": "Status", "value": "${{ needs.performance-tests.result }}", "short": true },
+                  { "title": "Run", "value": "<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Details>", "short": true }
+                ]
+              }]
+            }

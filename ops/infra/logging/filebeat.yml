@@ -1,0 +1,308 @@
+# Filebeat configuration for HuskyApply log shipping
+# Ships logs from containers to Elasticsearch via Logstash
+
+# Global settings
+name: huskyapply-filebeat
+tags: ["huskyapply", "gateway", "microservices"]
+
+# Input configuration
+filebeat.inputs:
+  # Application logs
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/huskyapply/application*.log
+    fields:
+      service: huskyapply-gateway
+      log_type: application
+      environment: ${ENVIRONMENT:production}
+    fields_under_root: true
+    multiline.pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+    multiline.negate: true
+    multiline.match: after
+    json.keys_under_root: true
+    json.add_error_key: true
+    close_inactive: 5m
+    scan_frequency: 1s
+    harvester_buffer_size: 16384
+    max_bytes: 10485760  # 10MB max log line
+    
+  # Audit logs (high priority)
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/huskyapply/audit*.log
+    fields:
+      service: huskyapply-gateway
+      log_type: audit
+      environment: ${ENVIRONMENT:production}
+      priority: high
+      compliance: true
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+    close_inactive: 1m
+    scan_frequency: 1s
+    harvester_buffer_size: 32768
+    
+  # Security logs (critical priority)
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/huskyapply/security*.log
+    fields:
+      service: huskyapply-gateway
+      log_type: security
+      environment: ${ENVIRONMENT:production}
+      priority: critical
+      alert: true
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+    close_inactive: 30s
+    scan_frequency: 500ms
+    harvester_buffer_size: 32768
+    
+  # Compliance logs (long retention)
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/huskyapply/compliance*.log
+    fields:
+      service: huskyapply-gateway
+      log_type: compliance
+      environment: ${ENVIRONMENT:production}
+      retention: 7_years
+      compliance: true
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+    close_inactive: 5m
+    scan_frequency: 5s
+    harvester_buffer_size: 16384
+    
+  # Performance logs
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/huskyapply/performance*.log
+    fields:
+      service: huskyapply-gateway
+      log_type: performance
+      environment: ${ENVIRONMENT:production}
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+    close_inactive: 10m
+    scan_frequency: 10s
+    
+  # Container logs (when running in Kubernetes)
+  - type: container
+    enabled: ${KUBERNETES_ENABLED:false}
+    paths:
+      - /var/log/containers/huskyapply-*_${NAMESPACE:default}_*.log
+    fields:
+      service: huskyapply-gateway
+      log_type: container
+      environment: ${ENVIRONMENT:production}
+    fields_under_root: true
+    processors:
+      - add_kubernetes_metadata:
+          host: ${NODE_NAME:localhost}
+          matchers:
+          - logs_path:
+              logs_path: "/var/log/containers/"
+
+# Processors
+processors:
+  # Add host information
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+      
+  # Add docker metadata
+  - add_docker_metadata:
+      host: "unix:///var/run/docker.sock"
+      
+  # Add kubernetes metadata if available
+  - add_kubernetes_metadata:
+      when.contains.tags: kubernetes
+      
+  # Drop debug logs in production
+  - drop_event:
+      when:
+        and:
+          - equals:
+              environment: production
+          - or:
+            - contains:
+                log_level: DEBUG
+            - contains:
+                log_level: TRACE
+                
+  # Enhance security logs
+  - script:
+      when.equals.log_type: security
+      lang: javascript
+      id: enhance_security
+      source: >
+        function process(event) {
+          var severity = event.Get("severity");
+          if (severity == "CRITICAL" || severity == "HIGH") {
+            event.Put("@alert", true);
+            event.Put("@priority", 1);
+          }
+          return event;
+        }
+        
+  # Add environment-specific tags
+  - script:
+      lang: javascript
+      id: add_env_tags
+      source: >
+        function process(event) {
+          var env = event.Get("environment");
+          var tags = event.Get("tags") || [];
+          
+          if (env == "production") {
+            tags.push("prod");
+          } else if (env == "staging") {
+            tags.push("stage");
+          } else {
+            tags.push("dev");
+          }
+          
+          event.Put("tags", tags);
+          return event;
+        }
+
+# Output configuration
+output.logstash:
+  hosts: ["${LOGSTASH_HOSTS:logstash:5044}"]
+  
+  # Load balancing
+  loadbalance: true
+  
+  # Connection settings
+  timeout: 15
+  max_retries: 3
+  backoff.init: 1s
+  backoff.max: 60s
+  
+  # Bulk settings
+  bulk_max_size: 2048
+  worker: 2
+  
+  # Compression
+  compression_level: 3
+  
+  # TLS settings for production
+  ssl.enabled: ${LOGSTASH_SSL_ENABLED:false}
+  ssl.certificate_authorities: ["${LOGSTASH_CA_CERT:/etc/ssl/certs/logstash-ca.crt}"]
+  ssl.certificate: "${LOGSTASH_CLIENT_CERT:/etc/ssl/certs/filebeat-client.crt}"
+  ssl.key: "${LOGSTASH_CLIENT_KEY:/etc/ssl/private/filebeat-client.key}"
+  ssl.verification_mode: certificate
+
+# Alternative output to Elasticsearch (fallback)
+# Uncomment if direct Elasticsearch shipping is needed
+# output.elasticsearch:
+#   hosts: ["${ELASTICSEARCH_HOSTS:elasticsearch:9200}"]
+#   protocol: "https"
+#   username: "${ELASTICSEARCH_USERNAME:elastic}"
+#   password: "${ELASTICSEARCH_PASSWORD}"
+#   index: "huskyapply-logs-%{[agent.version]}-%{+yyyy.MM.dd}"
+#   template.name: "huskyapply-logs"
+#   template.pattern: "huskyapply-logs-*"
+#   template.settings:
+#     index.number_of_shards: 1
+#     index.number_of_replicas: 1
+#     index.refresh_interval: 30s
+
+# Logging configuration for Filebeat itself
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat.log
+  keepfiles: 7
+  permissions: 0644
+  rotateeverybytes: 104857600  # 100MB
+  interval: 24h
+
+# Monitoring
+monitoring:
+  enabled: true
+  elasticsearch:
+    hosts: ["${MONITORING_ELASTICSEARCH_HOSTS:${ELASTICSEARCH_HOSTS:elasticsearch:9200}}"]
+    username: "${MONITORING_ELASTICSEARCH_USERNAME:${ELASTICSEARCH_USERNAME:elastic}}"
+    password: "${MONITORING_ELASTICSEARCH_PASSWORD:${ELASTICSEARCH_PASSWORD}}"
+
+# Performance tuning
+queue.mem:
+  events: 4096
+  flush.min_events: 512
+  flush.timeout: 5s
+
+# Resource limits
+max_procs: 2
+
+# Autodiscover configuration for Kubernetes
+autodiscover:
+  providers:
+    - type: kubernetes
+      templates:
+        - condition:
+            contains:
+              kubernetes.labels.app: "huskyapply"
+          config:
+            - type: container
+              paths:
+                - /var/log/containers/*${data.kubernetes.pod.name}_${data.kubernetes.namespace}_*.log
+              fields:
+                service: "huskyapply-${data.kubernetes.labels.component}"
+                environment: "${data.kubernetes.labels.environment}"
+              fields_under_root: true
+              multiline.pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+              multiline.negate: true
+              multiline.match: after
+
+# HTTP endpoint for health checking
+http:
+  enabled: true
+  host: 0.0.0.0
+  port: 5066
+  
+# Module configuration
+filebeat.modules:
+  # Nginx module (if using nginx as reverse proxy)
+  - module: nginx
+    access:
+      enabled: ${NGINX_ACCESS_LOGS_ENABLED:false}
+      var.paths: ["/var/log/nginx/access.log*"]
+    error:
+      enabled: ${NGINX_ERROR_LOGS_ENABLED:false}
+      var.paths: ["/var/log/nginx/error.log*"]
+      
+  # System module
+  - module: system
+    syslog:
+      enabled: ${SYSTEM_SYSLOG_ENABLED:false}
+      var.paths: ["/var/log/syslog*"]
+    auth:
+      enabled: ${SYSTEM_AUTH_LOGS_ENABLED:true}
+      var.paths: ["/var/log/auth.log*"]
+
+# ILM Policy for log retention
+setup.ilm.enabled: true
+setup.ilm.rollover_alias: "huskyapply-logs"
+setup.ilm.pattern: "huskyapply-logs-*"
+setup.ilm.policy: "huskyapply-logs-policy"
+
+# Template settings
+setup.template.enabled: true
+setup.template.name: "huskyapply-logs"
+setup.template.pattern: "huskyapply-logs-*"
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 1
+  index.refresh_interval: 30s
+  index.mapping.total_fields.limit: 2000

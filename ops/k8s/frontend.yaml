@@ -1,0 +1,229 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: huskyapply
+data:
+  nginx.conf: |
+    upstream backend {
+        least_conn;
+        server gateway-service:8080 max_fails=3 fail_timeout=30s;
+    }
+    
+    server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer-when-downgrade" always;
+        add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+        
+        # Gzip compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_proxied expired no-cache no-store private must-revalidate no_last_modified no_etag auth;
+        gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json;
+        
+        # Cache static assets
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+        
+        # API proxy
+        location /api/ {
+            proxy_pass http://backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_buffering off;
+            proxy_request_buffering off;
+            proxy_http_version 1.1;
+            proxy_intercept_errors on;
+            
+            # SSE specific settings
+            proxy_cache off;
+            proxy_set_header Connection '';
+            chunked_transfer_encoding off;
+        }
+        
+        # Health check
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+        
+        # SPA fallback
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+        
+        # Error pages
+        error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+            root /usr/share/nginx/html;
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: huskyapply
+  labels:
+    app: frontend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        version: v1
+    spec:
+      containers:
+      - name: frontend
+        image: nginx:1.25-alpine
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        volumeMounts:
+        - name: frontend-content
+          mountPath: /usr/share/nginx/html
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: frontend-content
+        configMap:
+          name: frontend-files
+      - name: nginx-config
+        configMap:
+          name: frontend-config
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: huskyapply
+  labels:
+    app: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: huskyapply
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-files
+  namespace: huskyapply
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>HuskyApply - AI-Powered Job Application Platform</title>
+        <link rel="stylesheet" href="styles.css">
+    </head>
+    <body>
+        <div class="app-container">
+            <header class="header">
+                <div class="header-content">
+                    <h1 class="logo">🐕 HuskyApply</h1>
+                    <nav class="nav">
+                        <a href="/dashboard.html" class="nav-link">Dashboard</a>
+                        <a href="/templates.html" class="nav-link">Templates</a>
+                        <a href="/pricing.html" class="nav-link">Pricing</a>
+                        <button id="logoutBtn" class="nav-link logout-btn">Logout</button>
+                    </nav>
+                </div>
+            </header>
+            
+            <main class="main-content">
+                <div class="welcome-section">
+                    <h2>Welcome to HuskyApply</h2>
+                    <p>Your AI-powered job application command center is ready for production!</p>
+                </div>
+            </main>
+        </div>
+        
+        <script>
+            // Production-ready deployment notification
+            console.log('🚀 HuskyApply is running in production mode with Kubernetes!');
+            
+            // Health check endpoint
+            fetch('/health')
+                .then(response => response.text())
+                .then(data => console.log('Frontend health:', data))
+                .catch(error => console.error('Health check failed:', error));
+        </script>
+    </body>
+    </html>

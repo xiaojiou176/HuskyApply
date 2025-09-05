@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: huskyapply
+  labels:
+    app: gateway
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+      - name: gateway
+        image: huskyapply/gateway:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: gateway-config
+        - secretRef:
+            name: gateway-secrets
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "production,k8s"
+        - name: JAVA_OPTS
+          value: "-Xms512m -Xmx2048m -XX:+UseG1GC -XX:G1HeapRegionSize=4m -XX:+UnlockExperimentalVMOptions -XX:+UseJVMCICompiler -XX:MaxRAMPercentage=75 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs/"
+        # Job Tracking System Configuration
+        - name: FEATURE_JOB_TRACKING_ENABLED
+          value: "true"
+        - name: FEATURE_RESUME_ANALYSIS_ENABLED
+          value: "true"
+        - name: FEATURE_TRIAL_MODE_ENABLED
+          value: "true"
+        # Database Read Replicas for Job Tracking Queries
+        - name: DB_READ_REPLICA_ENABLED
+          value: "true"
+        - name: JOB_TRACKING_CACHE_TTL
+          value: "300" # 5 minutes for dashboard data
+        # Enhanced Security for Resume Data
+        - name: RESUME_ENCRYPTION_ENABLED
+          value: "true"
+        - name: FILE_UPLOAD_MAX_SIZE
+          value: "10MB"
+        - name: GDPR_COMPLIANCE_MODE
+          value: "true"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          requests:
+            memory: "768Mi"    # Increased for job tracking features
+            cpu: "300m"        # Higher baseline for new functionality
+          limits:
+            memory: "3Gi"      # Increased limit for resume processing
+            cpu: "2500m"       # Allow burst capacity for AI integration
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 45   # Extended for job tracking initialization
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 40      # Allow more time for feature loading
+        volumeMounts:
+        - name: gateway-logs
+          mountPath: /app/logs
+        - name: tmp-volume
+          mountPath: /tmp
+      volumes:
+      - name: gateway-logs
+        emptyDir: {}
+      - name: tmp-volume
+        emptyDir: {}
+      priorityClassName: huskyapply-critical
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - gateway
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-service
+  namespace: huskyapply
+  labels:
+    app: gateway
+spec:
+  selector:
+    app: gateway
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-hpa
+  namespace: huskyapply
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 3
+  maxReplicas: 50
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  namespace: huskyapply
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: gateway

@@ -1,0 +1,429 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdn-performance-config
+  namespace: huskyapply
+data:
+  # CloudFlare Workers script for edge computing
+  cloudflare-worker.js: |
+    addEventListener('fetch', event => {
+      event.respondWith(handleRequest(event.request))
+    })
+    
+    async function handleRequest(request) {
+      const url = new URL(request.url)
+      const cache = caches.default
+      
+      // Edge caching rules
+      if (url.pathname.match(/\.(js|css|png|jpg|jpeg|gif|ico|woff|woff2)$/)) {
+        // Cache static assets for 1 year
+        const cacheKey = new Request(url.toString(), request)
+        let response = await cache.match(cacheKey)
+        
+        if (!response) {
+          response = await fetch(request)
+          const headers = new Headers(response.headers)
+          headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+          headers.set('X-Edge-Cache', 'MISS')
+          
+          response = new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: headers
+          })
+          
+          event.waitUntil(cache.put(cacheKey, response.clone()))
+        } else {
+          const headers = new Headers(response.headers)
+          headers.set('X-Edge-Cache', 'HIT')
+          response = new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: headers
+          })
+        }
+        return response
+      }
+      
+      // API request optimization
+      if (url.pathname.startsWith('/api/')) {
+        const request_start = Date.now()
+        
+        // Add edge location headers
+        const modifiedRequest = new Request(request)
+        modifiedRequest.headers.set('X-Edge-Location', CF_COLO)
+        modifiedRequest.headers.set('X-Edge-Request-ID', crypto.randomUUID())
+        
+        let response = await fetch(modifiedRequest)
+        
+        // Add performance headers
+        const headers = new Headers(response.headers)
+        headers.set('X-Edge-Duration', Date.now() - request_start)
+        headers.set('X-Edge-Location', CF_COLO)
+        
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: headers
+        })
+      }
+      
+      // Default response
+      return fetch(request)
+    }
+  
+  # AWS CloudFront distribution configuration
+  cloudfront-config.yaml: |
+    AWSTemplateFormatVersion: '2010-09-09'
+    Description: 'HuskyApply CloudFront Distribution'
+    
+    Resources:
+      HuskyApplyDistribution:
+        Type: AWS::CloudFront::Distribution
+        Properties:
+          DistributionConfig:
+            Origins:
+            - Id: huskyapply-origin
+              DomainName: !Sub '${LoadBalancerDNS}'
+              CustomOriginConfig:
+                HTTPPort: 80
+                HTTPSPort: 443
+                OriginProtocolPolicy: https-only
+                OriginSSLProtocols:
+                - TLSv1.2
+            
+            - Id: api-origin
+              DomainName: !Sub 'api.${DomainName}'
+              CustomOriginConfig:
+                HTTPPort: 80
+                HTTPSPort: 443
+                OriginProtocolPolicy: https-only
+            
+            DefaultCacheBehavior:
+              TargetOriginId: huskyapply-origin
+              ViewerProtocolPolicy: redirect-to-https
+              AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+              CachedMethods:
+              - GET
+              - HEAD
+              Compress: true
+              ForwardedValues:
+                QueryString: true
+                Headers:
+                - Authorization
+                - X-Requested-With
+                Cookies:
+                  Forward: whitelist
+                  WhitelistedNames:
+                  - sessionid
+                  - csrftoken
+              TrustedSigners:
+              - self
+              MinTTL: 0
+              DefaultTTL: 86400
+              MaxTTL: 31536000
+            
+            CacheBehaviors:
+            # Static assets - long cache
+            - PathPattern: '*.js'
+              TargetOriginId: huskyapply-origin
+              ViewerProtocolPolicy: redirect-to-https
+              Compress: true
+              ForwardedValues:
+                QueryString: false
+              MinTTL: 31536000
+              DefaultTTL: 31536000
+              MaxTTL: 31536000
+            
+            - PathPattern: '*.css'
+              TargetOriginId: huskyapply-origin
+              ViewerProtocolPolicy: redirect-to-https
+              Compress: true
+              ForwardedValues:
+                QueryString: false
+              MinTTL: 31536000
+              DefaultTTL: 31536000
+              MaxTTL: 31536000
+            
+            # API requests - no cache
+            - PathPattern: '/api/*'
+              TargetOriginId: api-origin
+              ViewerProtocolPolicy: https-only
+              AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+              ForwardedValues:
+                QueryString: true
+                Headers:
+                - '*'
+              MinTTL: 0
+              DefaultTTL: 0
+              MaxTTL: 0
+            
+            Enabled: true
+            Comment: 'HuskyApply Global CDN'
+            DefaultRootObject: index.html
+            CustomErrorResponses:
+            - ErrorCode: 404
+              ResponseCode: 200
+              ResponsePagePath: /index.html
+            - ErrorCode: 403
+              ResponseCode: 200
+              ResponsePagePath: /index.html
+            
+            PriceClass: PriceClass_All
+            HttpVersion: http2
+            IPV6Enabled: true
+            
+            ViewerCertificate:
+              AcmCertificateArn: !Ref SSLCertificate
+              SslSupportMethod: sni-only
+              MinimumProtocolVersion: TLSv1.2_2021
+            
+            WebACLId: !Ref WebACL
+            
+            Aliases:
+            - huskyapply.com
+            - www.huskyapply.com
+            - api.huskyapply.com
+            
+            Logging:
+              Bucket: !Sub '${LoggingBucket}.s3.amazonaws.com'
+              Prefix: 'cloudfront-logs/'
+              IncludeCookies: false
+
+---
+# Performance optimization deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: performance-optimizer
+  namespace: huskyapply
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: performance-optimizer
+  template:
+    metadata:
+      labels:
+        app: performance-optimizer
+    spec:
+      containers:
+      - name: nginx-optimizer
+        image: nginx:1.25-alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: performance-config
+          mountPath: /etc/nginx/conf.d
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-performance-config
+      - name: performance-config
+        configMap:
+          name: cdn-performance-config
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-performance-config
+  namespace: huskyapply
+data:
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    worker_rlimit_nofile 65535;
+    
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    
+    events {
+        worker_connections 4096;
+        use epoll;
+        multi_accept on;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        # Performance optimizations
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        keepalive_requests 1000;
+        
+        # Gzip compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1000;
+        gzip_comp_level 6;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml
+            image/svg+xml;
+        
+        # Brotli compression (if module available)
+        brotli on;
+        brotli_comp_level 6;
+        brotli_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml;
+        
+        # Client body and headers
+        client_max_body_size 10m;
+        client_body_buffer_size 128k;
+        client_header_buffer_size 1k;
+        large_client_header_buffers 4 4k;
+        
+        # Timeouts
+        client_body_timeout 12;
+        client_header_timeout 12;
+        send_timeout 10;
+        
+        # Rate limiting
+        limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+        limit_req_zone $binary_remote_addr zone=static:10m rate=30r/s;
+        
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer-when-downgrade" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        
+        # Logging format with performance metrics
+        log_format performance '$remote_addr - $remote_user [$time_local] '
+                              '"$request" $status $bytes_sent '
+                              '"$http_referer" "$http_user_agent" '
+                              'rt=$request_time uct="$upstream_connect_time" '
+                              'uht="$upstream_header_time" urt="$upstream_response_time"';
+        
+        access_log /var/log/nginx/access.log performance buffer=32k flush=5s;
+        
+        # Include additional configurations
+        include /etc/nginx/conf.d/*.conf;
+    }
+  
+  performance.conf: |
+    # Static asset optimization
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|pdf)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Cache-Status "STATIC";
+        
+        # Enable efficient file serving
+        sendfile on;
+        sendfile_max_chunk 1m;
+        tcp_nopush on;
+        
+        # Compression
+        gzip_static on;
+        
+        # Rate limiting for static assets
+        limit_req zone=static burst=50 nodelay;
+        
+        # Security
+        add_header X-Content-Type-Options nosniff;
+    }
+    
+    # API optimization
+    location /api/ {
+        # Rate limiting
+        limit_req zone=api burst=20 nodelay;
+        
+        # Proxy settings
+        proxy_pass http://gateway-service:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Timeouts
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # Buffering
+        proxy_buffering off;
+        proxy_request_buffering off;
+        
+        # Cache control
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+    }
+    
+    # Health check endpoint
+    location /nginx-health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+
+---
+# CDN integration service
+apiVersion: v1
+kind: Service
+metadata:
+  name: performance-optimizer-service
+  namespace: huskyapply
+  annotations:
+    # AWS Load Balancer Controller annotations
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/nginx-health"
+    
+    # CloudFlare annotations
+    external-dns.alpha.kubernetes.io/hostname: "huskyapply.com,www.huskyapply.com"
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
+spec:
+  selector:
+    app: performance-optimizer
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+  type: LoadBalancer

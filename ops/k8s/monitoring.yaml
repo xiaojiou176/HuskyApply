@@ -1,0 +1,290 @@
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: gateway-metrics
+  namespace: huskyapply-monitoring
+  labels:
+    app: gateway
+spec:
+  selector:
+    matchLabels:
+      app: gateway
+  namespaceSelector:
+    matchNames:
+    - huskyapply
+  endpoints:
+  - port: http
+    path: /actuator/prometheus
+    interval: 30s
+    scrapeTimeout: 10s
+---
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: brain-metrics
+  namespace: huskyapply-monitoring
+  labels:
+    app: brain
+spec:
+  selector:
+    matchLabels:
+      app: brain
+  namespaceSelector:
+    matchNames:
+    - huskyapply
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+---
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: postgres-metrics
+  namespace: huskyapply-monitoring
+  labels:
+    app: postgres
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  namespaceSelector:
+    matchNames:
+    - huskyapply
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+---
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: rabbitmq-metrics
+  namespace: huskyapply-monitoring
+  labels:
+    app: rabbitmq
+spec:
+  selector:
+    matchLabels:
+      app: rabbitmq
+  namespaceSelector:
+    matchNames:
+    - huskyapply
+  endpoints:
+  - port: prometheus
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+---
+# Prometheus AlertManager rules
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: huskyapply-alerts
+  namespace: huskyapply-monitoring
+spec:
+  groups:
+  - name: huskyapply.rules
+    rules:
+    # Application Health
+    - alert: GatewayDown
+      expr: up{job="gateway"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Gateway service is down"
+        description: "Gateway service has been down for more than 1 minute"
+    
+    - alert: BrainDown
+      expr: up{job="brain"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Brain service is down"
+        description: "Brain AI service has been down for more than 1 minute"
+    
+    # Database Health
+    - alert: PostgresDown
+      expr: up{job="postgres"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "PostgreSQL database is down"
+        description: "PostgreSQL database has been down for more than 1 minute"
+    
+    - alert: PostgresConnectionsHigh
+      expr: pg_stat_activity_count > 150
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "PostgreSQL connection count is high"
+        description: "PostgreSQL has {{ $value }} active connections (threshold: 150)"
+    
+    # Message Queue Health
+    - alert: RabbitMQDown
+      expr: up{job="rabbitmq"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "RabbitMQ is down"
+        description: "RabbitMQ message broker has been down for more than 1 minute"
+    
+    - alert: RabbitMQQueueGrowth
+      expr: rabbitmq_queue_messages > 1000
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "RabbitMQ queue is growing"
+        description: "RabbitMQ queue {{ $labels.queue }} has {{ $value }} messages"
+    
+    # Resource Utilization
+    - alert: HighCPUUsage
+      expr: rate(container_cpu_usage_seconds_total[5m]) > 0.8
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage detected"
+        description: "CPU usage is above 80% for {{ $labels.pod }} in namespace {{ $labels.namespace }}"
+    
+    - alert: HighMemoryUsage
+      expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage detected"
+        description: "Memory usage is above 90% for {{ $labels.pod }} in namespace {{ $labels.namespace }}"
+    
+    # Application Metrics
+    - alert: HighErrorRate
+      expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value }} errors/second for {{ $labels.service }}"
+    
+    - alert: HighResponseTime
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High response time detected"
+        description: "95th percentile response time is {{ $value }}s for {{ $labels.service }}"
+    
+    # Job Processing
+    - alert: JobProcessingFailures
+      expr: rate(jobs_processed_total{status="failure"}[5m]) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High job failure rate"
+        description: "Job failure rate is {{ $value }} failures/second"
+    
+    - alert: JobProcessingDelay
+      expr: histogram_quantile(0.95, rate(job_processing_seconds_bucket[5m])) > 300
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Job processing is slow"
+        description: "95th percentile job processing time is {{ $value }}s"
+---
+# Grafana Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: huskyapply-dashboard
+  namespace: huskyapply-monitoring
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "title": "HuskyApply Production Metrics",
+        "tags": ["huskyapply", "production"],
+        "timezone": "UTC",
+        "panels": [
+          {
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total[5m])",
+                "legendFormat": "{{ method }} {{ handler }}"
+              }
+            ]
+          },
+          {
+            "title": "Response Times",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "50th percentile"
+              },
+              {
+                "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "95th percentile"
+              }
+            ]
+          },
+          {
+            "title": "Error Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{status=~\"4..|5..\"}[5m])",
+                "legendFormat": "{{ status }}"
+              }
+            ]
+          },
+          {
+            "title": "Job Processing",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(jobs_processed_total[5m])",
+                "legendFormat": "{{ status }}"
+              }
+            ]
+          },
+          {
+            "title": "Database Connections",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "pg_stat_activity_count",
+                "legendFormat": "Active connections"
+              }
+            ]
+          },
+          {
+            "title": "RabbitMQ Queue Depth",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rabbitmq_queue_messages",
+                "legendFormat": "{{ queue }}"
+              }
+            ]
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "30s"
+      }
+    }

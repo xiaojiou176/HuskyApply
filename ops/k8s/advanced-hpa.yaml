@@ -1,0 +1,431 @@
+# Advanced HPA v2 Configuration for 10x Load Scaling
+# This configuration supports intelligent scaling based on custom metrics
+# and business logic to handle traffic surges effectively
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-advanced-hpa
+  namespace: huskyapply
+  labels:
+    app: gateway
+    component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 3
+  maxReplicas: 50  # Support 10x scaling (from 5 baseline to 50)
+  metrics:
+  # Resource-based metrics
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60  # More conservative for burst capacity
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  # Custom metrics for business logic
+  - type: Pods
+    pods:
+      metric:
+        name: http_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "100"  # Scale when > 100 RPS per pod
+  - type: Pods
+    pods:
+      metric:
+        name: job_queue_depth
+      target:
+        type: AverageValue
+        averageValue: "10"  # Scale when > 10 pending jobs per pod
+  - type: Pods
+    pods:
+      metric:
+        name: response_latency_p95
+      target:
+        type: AverageValue
+        averageValue: "500m"  # Scale when P95 latency > 500ms
+  # External metrics from load balancer
+  - type: External
+    external:
+      metric:
+        name: requests_per_second
+        selector:
+          matchLabels:
+            service: gateway
+      target:
+        type: AverageValue
+        averageValue: "300"  # Scale when total RPS > 300 * replicas
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60  # More conservative stabilization for production
+      policies:
+      - type: Percent
+        value: 100  # Double pods more cautiously to prevent resource thrashing
+        periodSeconds: 30
+      - type: Pods
+        value: 8    # Reduced from 10 to prevent overwhelming cluster resources
+        periodSeconds: 45
+      - type: Percent  # Additional policy for gradual scaling
+        value: 50   # 50% increase for moderate load increases
+        periodSeconds: 15
+      selectPolicy: Max  # Use most aggressive policy when needed
+    scaleDown:
+      stabilizationWindowSeconds: 900  # 15min stabilization to avoid flapping
+      policies:
+      - type: Percent
+        value: 20   # More conservative scale-down for cost optimization
+        periodSeconds: 90
+      - type: Pods
+        value: 3    # Maximum 3 pods removed at once for safety
+        periodSeconds: 90
+      - type: Percent  # Additional policy for graceful scale-down
+        value: 10   # 10% reduction for minor load decreases
+        periodSeconds: 60
+      selectPolicy: Min  # Use most conservative policy
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: brain-advanced-hpa
+  namespace: huskyapply
+  labels:
+    app: brain
+    component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: brain
+  minReplicas: 2
+  maxReplicas: 30  # AI processing requires more conservative scaling
+  metrics:
+  # Resource metrics
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 75
+  # Custom AI-specific metrics with improved thresholds
+  - type: Pods
+    pods:
+      metric:
+        name: ai_processing_queue_depth
+      target:
+        type: AverageValue
+        averageValue: "3"  # More responsive scaling when > 3 AI jobs queued per pod
+  - type: Pods
+    pods:
+      metric:
+        name: ai_processing_duration_p90
+      target:
+        type: AverageValue
+        averageValue: "90000"  # Scale when P90 > 1.5 minutes (90s) for better UX
+  - type: Pods
+    pods:
+      metric:
+        name: rabbitmq_messages_ready
+      target:
+        type: AverageValue
+        averageValue: "3"  # Scale when > 3 messages per pod in queue
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120  # Longer stabilization for expensive AI pods
+      policies:
+      - type: Percent
+        value: 75   # More conservative scaling for AI workloads
+        periodSeconds: 45
+      - type: Pods
+        value: 4    # Add up to 4 pods for AI bursts to prevent resource contention
+        periodSeconds: 60
+      - type: Percent  # Additional gradual scaling policy
+        value: 33   # 33% increase for moderate AI load
+        periodSeconds: 30
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 1200 # 20min for AI workloads to ensure stability
+      policies:
+      - type: Percent
+        value: 15   # Very conservative for expensive AI pods
+        periodSeconds: 180
+      - type: Pods
+        value: 1    # Maximum 1 AI pod removed at once for safety
+        periodSeconds: 180
+      - type: Percent  # Additional ultra-conservative policy
+        value: 25   # Allow 25% reduction only after extended stability
+        periodSeconds: 300
+      selectPolicy: Min
+
+---
+# Vertical Pod Autoscaler for resource optimization
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: gateway-vpa
+  namespace: huskyapply
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  updatePolicy:
+    updateMode: "Auto"  # Automatically apply recommendations
+  resourcePolicy:
+    containerPolicies:
+    - containerName: gateway
+      minAllowed:
+        cpu: 250m
+        memory: 512Mi
+      maxAllowed:
+        cpu: 2000m
+        memory: 4Gi
+      controlledResources: ["cpu", "memory"]
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: brain-vpa
+  namespace: huskyapply
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: brain
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+    - containerName: brain
+      minAllowed:
+        cpu: 500m
+        memory: 1Gi
+      maxAllowed:
+        cpu: 4000m
+        memory: 8Gi
+      controlledResources: ["cpu", "memory"]
+
+---
+# Pod Disruption Budget for Gateway - ensures availability during updates
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  namespace: huskyapply
+  labels:
+    app: gateway
+    component: availability
+spec:
+  selector:
+    matchLabels:
+      app: gateway
+  minAvailable: 70%  # Ensure at least 70% of pods remain during disruptions
+  # Alternative: maxUnavailable: 30%
+  unhealthyPodEvictionPolicy: IfHealthyBudget  # Only evict unhealthy pods if budget allows
+
+---
+# Pod Disruption Budget for Brain - conservative for expensive AI pods
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: brain-pdb
+  namespace: huskyapply
+  labels:
+    app: brain
+    component: availability
+spec:
+  selector:
+    matchLabels:
+      app: brain
+  minAvailable: 80%  # More conservative for AI processing pods
+  # Ensures AI jobs can continue during cluster maintenance
+  unhealthyPodEvictionPolicy: IfHealthyBudget
+
+---
+# Pod Affinity Rules for Gateway - spread across nodes and zones
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-affinity-template
+  namespace: huskyapply
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: "Template showing optimal affinity rules for Gateway deployment"
+spec:
+  template:
+    spec:
+      affinity:
+        podAntiAffinity:
+          # Prefer to spread Gateway pods across different nodes
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["gateway"]
+              topologyKey: kubernetes.io/hostname
+          # Strongly prefer to spread across availability zones
+          - weight: 80
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["gateway"]
+              topologyKey: topology.kubernetes.io/zone
+        # Prefer nodes with sufficient resources for Gateway workloads
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: node-type
+                operator: In
+                values: ["compute-optimized", "general-purpose"]
+          - weight: 30
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64"]  # Prefer x86_64 for Java performance
+
+---
+# Pod Affinity Rules for Brain - memory-optimized placement
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: brain-affinity-template
+  namespace: huskyapply
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: "Template showing optimal affinity rules for Brain deployment"
+spec:
+  template:
+    spec:
+      affinity:
+        podAntiAffinity:
+          # Strongly require Brain pods to be on different nodes (expensive workloads)
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values: ["brain"]
+            topologyKey: kubernetes.io/hostname
+          # Prefer different availability zones
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["brain"]
+              topologyKey: topology.kubernetes.io/zone
+        # Require memory-optimized nodes for AI workloads
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values: ["r5.xlarge", "r5.2xlarge", "r6i.xlarge", "r6i.2xlarge"]
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-type
+                operator: In
+                values: ["memory-optimized", "ai-optimized"]
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: gpu-enabled
+                operator: In
+                values: ["true"]  # Prefer GPU nodes for future AI acceleration
+      # Startup probe configuration for AI services
+      containers:
+      - name: brain
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 30   # Allow time for AI model loading
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12      # 2 minutes total startup time
+          successThreshold: 1
+        # Readiness probe to ensure AI services are fully loaded
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        # Resource requests and limits optimized for AI workloads
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+
+---
+# ServiceMonitor for Prometheus to collect custom metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gateway-custom-metrics
+  namespace: huskyapply
+  labels:
+    app: gateway
+spec:
+  selector:
+    matchLabels:
+      app: gateway
+  endpoints:
+  - port: http
+    path: /actuator/prometheus
+    interval: 15s
+    scrapeTimeout: 10s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: brain-custom-metrics
+  namespace: huskyapply
+  labels:
+    app: brain
+spec:
+  selector:
+    matchLabels:
+      app: brain
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
+    scrapeTimeout: 10s

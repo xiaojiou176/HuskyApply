@@ -1,0 +1,90 @@
+version: "3.9"
+
+# Development-focused Docker Compose override
+# Optimized for fast iteration and debugging
+
+services:
+  gateway:
+    build:
+      target: runtime  # Use production build even in dev for consistency
+      cache_from:
+        - huskyapply/gateway:dev-cache
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        MAVEN_OPTS: "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+    image: huskyapply/gateway:dev
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev,docker
+      - SPRING_DEVTOOLS_RESTART_ENABLED=true
+      - SPRING_JPA_SHOW_SQL=true
+      - SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL=true
+      - LOGGING_LEVEL_COM_HUSKYAPPLY=DEBUG
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=50.0 -XX:+UseG1GC -XX:+TieredCompilation
+    volumes:
+      # Enable hot reloading for development
+      - ../gateway/src:/app/src:ro
+      - ../gateway/target:/app/target
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+
+  brain:
+    build:
+      target: development  # Use development target with hot reload
+      cache_from:
+        - huskyapply/brain:dev-cache
+    image: huskyapply/brain:dev
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=DEBUG
+      - DEVELOPMENT_MODE=true
+      - UVICORN_LOG_LEVEL=info
+    volumes:
+      # Enable hot reloading for Python development
+      - ../brain:/app:delegated
+      - /app/.venv  # Don't mount over virtual environment
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", ".", "--log-level", "debug"]
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  # Development tools and utilities
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis-server:6379
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=admin
+    ports:
+      - "8081:8081"
+    networks:
+      - huskyapply-net
+    depends_on:
+      - redis-server
+
+  # PostgreSQL Admin Interface
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8082:8080"
+    networks:
+      - huskyapply-net
+    depends_on:
+      - postgres-db
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-db
+
+  # Mailhog for email testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"  # SMTP server
+      - "8025:8025"  # Web interface
+    networks:
+      - huskyapply-net
