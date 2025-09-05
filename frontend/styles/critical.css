@@ -1,0 +1,373 @@
+/**
+ * Critical CSS - Above-the-fold styles
+ * Loaded synchronously for immediate rendering
+ * Keep this under 14KB for optimal performance
+ */
+
+/* ======================================
+   CRITICAL VARIABLES & RESET
+   ====================================== */
+:root {
+  /* Critical colors only */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --white: #ffffff;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-500: #6b7280;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+  
+  /* Critical typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Critical spacing */
+  --space-2: 0.5rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  
+  /* Critical effects */
+  --radius: 0.375rem;
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  --transition: all 0.15s ease-in-out;
+}
+
+/* Critical reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(135deg, var(--gray-50) 0%, #dbeafe 100%);
+  min-height: 100vh;
+  color: var(--gray-800);
+}
+
+/* ======================================
+   CRITICAL LAYOUT
+   ====================================== */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+.header {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.8);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--gray-900);
+  font-weight: 700;
+  font-size: 1.5rem;
+}
+
+.logo-icon {
+  font-size: 1.8rem;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.main-content {
+  padding: var(--space-8) 0;
+}
+
+/* ======================================
+   CRITICAL BUTTONS
+   ====================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--white);
+  border-color: var(--primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.btn-secondary {
+  background: var(--white);
+  color: var(--gray-800);
+  border-color: var(--gray-500);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--gray-50);
+}
+
+.btn-sm {
+  padding: calc(var(--space-2) * 0.75) var(--space-2);
+  font-size: 0.75rem;
+}
+
+/* ======================================
+   CRITICAL FORM ELEMENTS
+   ====================================== */
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--gray-500);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  transition: var(--transition);
+  background: var(--white);
+}
+
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.form-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-weight: 500;
+  color: var(--gray-900);
+}
+
+.form-group {
+  margin-bottom: var(--space-6);
+}
+
+/* ======================================
+   CRITICAL CARDS
+   ====================================== */
+.card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: var(--space-6);
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.card-body {
+  padding: var(--space-6);
+}
+
+/* ======================================
+   CRITICAL UTILITIES
+   ====================================== */
+.hidden {
+  display: none !important;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.m-0 {
+  margin: 0;
+}
+
+.mb-4 {
+  margin-bottom: var(--space-4);
+}
+
+.w-full {
+  width: 100%;
+}
+
+.flex {
+  display: flex;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.gap-4 {
+  gap: var(--space-4);
+}
+
+/* ======================================
+   CRITICAL RESPONSIVE
+   ====================================== */
+@media (max-width: 768px) {
+  .header-content {
+    padding: var(--space-2) var(--space-4);
+  }
+  
+  .logo {
+    font-size: 1.25rem;
+  }
+  
+  .nav {
+    gap: var(--space-2);
+  }
+  
+  .btn {
+    padding: var(--space-2);
+    font-size: 0.75rem;
+  }
+  
+  .container {
+    padding: 0 var(--space-2);
+  }
+  
+  .card-header, .card-body {
+    padding: var(--space-4);
+  }
+}
+
+/* ======================================
+   LOADING STATES
+   ====================================== */
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.btn.loading {
+  position: relative;
+  color: transparent;
+}
+
+.btn.loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  color: inherit;
+}
+
+/* ======================================
+   ACCESSIBILITY
+   ====================================== */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: var(--primary);
+  color: var(--white);
+  padding: 8px;
+  text-decoration: none;
+  border-radius: 4px;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  top: 6px;
+}
+
+/* Focus styles for keyboard navigation */
+.using-keyboard *:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ======================================
+   DARK MODE SUPPORT
+   ====================================== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --white: #1f2937;
+    --gray-50: #374151;
+    --gray-100: #4b5563;
+    --gray-500: #9ca3af;
+    --gray-800: #f9fafb;
+    --gray-900: #ffffff;
+  }
+  
+  body {
+    background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+  }
+}
+
+[data-theme="dark"] {
+  --white: #1f2937;
+  --gray-50: #374151;
+  --gray-100: #4b5563;
+  --gray-500: #9ca3af;
+  --gray-800: #f9fafb;
+  --gray-900: #ffffff;
+}
+
+[data-theme="dark"] body {
+  background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+}

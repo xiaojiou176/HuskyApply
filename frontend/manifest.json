@@ -1,0 +1,312 @@
+{
+  "name": "HuskyApply - AI Job Application Assistant",
+  "short_name": "HuskyApply",
+  "description": "Transform job hunting with AI-powered cover letters and application materials. Generate personalized, professional cover letters in seconds with advanced AI models.",
+  "version": "2.1.0",
+  "lang": "en-US",
+  "dir": "ltr",
+  
+  "start_url": "/?utm_source=pwa&utm_medium=homescreen",
+  "scope": "/",
+  "id": "huskyapply-pwa-v2",
+  
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "minimal-ui", "standalone", "browser"],
+  "orientation": "portrait-primary",
+  
+  "theme_color": "#2563eb",
+  "background_color": "#ffffff",
+  
+  "icons": [
+    {
+      "src": "icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  
+  "screenshots": [
+    {
+      "src": "screenshots/desktop-home.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "platform": "wide",
+      "label": "HuskyApply Home - Desktop View"
+    },
+    {
+      "src": "screenshots/desktop-dashboard.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "platform": "wide",
+      "label": "Dashboard with Job Statistics"
+    },
+    {
+      "src": "screenshots/mobile-home.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "label": "HuskyApply Home - Mobile View"
+    },
+    {
+      "src": "screenshots/mobile-generation.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "label": "AI Cover Letter Generation in Progress"
+    }
+  ],
+  
+  "categories": ["productivity", "business", "utilities", "education"],
+  
+  "shortcuts": [
+    {
+      "name": "Generate Cover Letter",
+      "short_name": "Generate",
+      "description": "Quick access to AI cover letter generation",
+      "url": "/?action=generate",
+      "icons": [
+        {
+          "src": "icons/shortcut-generate.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View your job application statistics",
+      "url": "/dashboard?source=shortcut",
+      "icons": [
+        {
+          "src": "icons/shortcut-dashboard.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Templates",
+      "short_name": "Templates",
+      "description": "Manage your cover letter templates",
+      "url": "/templates?source=shortcut",
+      "icons": [
+        {
+          "src": "icons/shortcut-templates.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "resume",
+          "accept": [
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "text/plain"
+          ]
+        }
+      ]
+    }
+  },
+  
+  "file_handlers": [
+    {
+      "action": "/open-file",
+      "accept": {
+        "application/pdf": [".pdf"],
+        "application/msword": [".doc"],
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+        "text/plain": [".txt"]
+      }
+    }
+  ],
+  
+  "protocol_handlers": [
+    {
+      "protocol": "web+huskyapply",
+      "url": "/protocol-handler?action=%s"
+    }
+  ],
+  
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  
+  "prefer_related_applications": false,
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://huskyapply.com/manifest.json",
+      "id": "huskyapply-webapp"
+    }
+  ],
+  
+  "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
+  
+  "permissions": [
+    "notifications",
+    "background-sync",
+    "periodic-background-sync",
+    "background-fetch"
+  ],
+  
+  "serviceworker": {
+    "src": "sw.js",
+    "scope": "/",
+    "update_via_cache": "none"
+  },
+  
+  "note_taking": {
+    "new_note_url": "/notes/new"
+  },
+  
+  "widgets": [
+    {
+      "name": "quick-generate",
+      "short_name": "Quick Gen",
+      "description": "Quick access widget for generating cover letters",
+      "tag": "quick-generate",
+      "template": "quick-generate-widget",
+      "ms_ac_template": "adaptive-card.json",
+      "data": "widget-data.json",
+      "type": "application/json",
+      "screenshots": [
+        {
+          "src": "screenshots/widget-quick-generate.png",
+          "sizes": "256x256",
+          "label": "Quick Generate Widget"
+        }
+      ],
+      "icons": [
+        {
+          "src": "icons/widget-generate.png",
+          "sizes": "256x256"
+        }
+      ],
+      "auth": false,
+      "update": 86400
+    },
+    {
+      "name": "job-stats",
+      "short_name": "Job Stats",
+      "description": "Display your job application statistics",
+      "tag": "job-stats",
+      "template": "job-stats-widget",
+      "type": "application/json",
+      "screenshots": [
+        {
+          "src": "screenshots/widget-stats.png",
+          "sizes": "256x256",
+          "label": "Job Statistics Widget"
+        }
+      ],
+      "icons": [
+        {
+          "src": "icons/widget-stats.png",
+          "sizes": "256x256"
+        }
+      ],
+      "auth": true,
+      "update": 3600
+    }
+  ],
+  
+  "scope_extensions": [
+    {"origin": "https://api.huskyapply.com"},
+    {"origin": "https://cdn.huskyapply.com"}
+  ],
+  
+  "tab_strip": {
+    "home_tab": {
+      "icons": [
+        {
+          "src": "icons/tab-home.png",
+          "sizes": "16x16",
+          "type": "image/png"
+        }
+      ]
+    }
+  },
+  
+  "user_preferences": {
+    "color_scheme_dark": {
+      "theme_color": "#1f2937",
+      "background_color": "#111827"
+    },
+    "color_scheme_light": {
+      "theme_color": "#2563eb",
+      "background_color": "#ffffff"
+    }
+  }
+}

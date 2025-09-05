@@ -1,0 +1,452 @@
+/* 
+ * PWA Component Styles
+ * Styles for Progressive Web App specific components and states
+ */
+
+/* ======================================
+   PWA INSTALL PROMPT
+   ====================================== */
+
+.pwa-install-prompt {
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+  right: 1rem;
+  background: linear-gradient(135deg, var(--primary), var(--info));
+  color: white;
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: 0 10px 40px rgba(37, 99, 235, 0.3);
+  transform: translateY(100%);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1000;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.pwa-install-prompt.visible {
+  transform: translateY(0);
+}
+
+.pwa-prompt-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.pwa-prompt-icon {
+  font-size: 2.5rem;
+  flex-shrink: 0;
+}
+
+.pwa-prompt-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.pwa-prompt-text h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.pwa-prompt-text p {
+  margin: 0;
+  font-size: 0.875rem;
+  opacity: 0.9;
+  line-height: 1.4;
+}
+
+.pwa-prompt-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.pwa-prompt-actions button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.875rem;
+}
+
+.pwa-prompt-actions .btn-primary {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.pwa-prompt-actions .btn-primary:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.pwa-prompt-actions .btn-secondary {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.pwa-prompt-actions .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.pwa-prompt-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.5rem;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.pwa-prompt-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+/* ======================================
+   CONNECTION INDICATOR
+   ====================================== */
+
+.connection-indicator {
+  position: fixed;
+  top: 60px;
+  left: 1rem;
+  padding: 0.5rem 1rem;
+  border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  z-index: 1000;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  border: 1px solid;
+  min-width: 80px;
+  text-align: center;
+}
+
+.connection-indicator.online {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.connection-indicator.offline {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.connection-indicator::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  background: currentColor;
+}
+
+/* Pulse animation for offline state */
+.connection-indicator.offline::before {
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ======================================
+   PWA SPECIFIC STATES
+   ====================================== */
+
+/* Installed PWA state */
+.pwa-installed .pwa-install-prompt {
+  display: none !important;
+}
+
+.pwa-installed .install-app-button {
+  display: none !important;
+}
+
+/* Add padding for connection indicator */
+.pwa-installed .theme-toggle {
+  top: 120px;
+}
+
+/* Offline state */
+body.offline {
+  --primary: #6b7280;
+  --primary-light: #9ca3af;
+}
+
+body.offline .btn-primary:not(.offline-available) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+body.offline .card:not(.offline-available) {
+  opacity: 0.8;
+}
+
+body.offline .offline-notice {
+  display: block;
+}
+
+.offline-notice {
+  display: none;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  margin: 1rem 0;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  font-size: 0.875rem;
+}
+
+.offline-notice::before {
+  content: '📡 ';
+  margin-right: 0.5rem;
+}
+
+/* Data saver mode */
+body.data-saver-mode .high-bandwidth-content {
+  display: none;
+}
+
+body.data-saver-mode .morphing-loader {
+  animation: none;
+  background: var(--gray-300);
+}
+
+body.data-saver-mode .parallax-element {
+  transform: none !important;
+}
+
+/* ======================================
+   PWA UPDATE NOTIFICATION
+   ====================================== */
+
+.pwa-update-notification {
+  background: linear-gradient(135deg, var(--info), var(--primary));
+  border-left-color: var(--info);
+}
+
+.pwa-update-notification .notification-action[data-action="update"] {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.pwa-update-notification .notification-action[data-action="update"]:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ======================================
+   RESPONSIVE PWA STYLES
+   ====================================== */
+
+@media (max-width: 768px) {
+  .pwa-install-prompt {
+    bottom: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  
+  .pwa-prompt-content {
+    flex-direction: column;
+    text-align: center;
+    gap: 1rem;
+  }
+  
+  .pwa-prompt-icon {
+    font-size: 3rem;
+  }
+  
+  .pwa-prompt-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .pwa-prompt-actions button {
+    width: 100%;
+    padding: 1rem;
+  }
+  
+  .connection-indicator {
+    top: 0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    padding: 0.25rem 0.75rem;
+  }
+}
+
+@media (min-width: 769px) {
+  .pwa-install-prompt {
+    left: auto;
+    right: 2rem;
+    bottom: 2rem;
+    max-width: 400px;
+  }
+  
+  .pwa-prompt-content {
+    align-items: flex-start;
+  }
+  
+  .pwa-prompt-actions {
+    flex-direction: row;
+    margin-top: 1.5rem;
+  }
+}
+
+/* ======================================
+   PWA ANIMATION ENHANCEMENTS
+   ====================================== */
+
+/* Enhanced install prompt animations */
+.pwa-install-prompt {
+  animation: slideInUp 0.5s ease-out;
+}
+
+.pwa-install-prompt.visible {
+  animation: slideInUp 0.5s ease-out;
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Connection indicator animations */
+.connection-indicator {
+  animation: slideInDown 0.3s ease-out;
+}
+
+@keyframes slideInDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Update notification special styling */
+.notification.pwa-update {
+  background: linear-gradient(90deg, 
+    rgba(59, 130, 246, 0.1), 
+    rgba(37, 99, 235, 0.05)
+  );
+  border-left-color: var(--info);
+  animation: updatePulse 2s infinite;
+}
+
+@keyframes updatePulse {
+  0%, 100% {
+    box-shadow: 0 10px 40px rgba(59, 130, 246, 0.1);
+  }
+  50% {
+    box-shadow: 0 10px 40px rgba(59, 130, 246, 0.2);
+  }
+}
+
+/* ======================================
+   PWA ACCESSIBILITY ENHANCEMENTS
+   ====================================== */
+
+.pwa-install-prompt:focus-within {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
+}
+
+.connection-indicator[aria-live="polite"] {
+  /* Screen reader will announce changes */
+}
+
+/* High contrast mode adjustments */
+@media (prefers-contrast: high) {
+  .pwa-install-prompt {
+    background: var(--primary);
+    border: 2px solid white;
+  }
+  
+  .connection-indicator {
+    border-width: 2px;
+  }
+  
+  .connection-indicator.online {
+    background: var(--success);
+    color: white;
+  }
+  
+  .connection-indicator.offline {
+    background: var(--error);
+    color: white;
+  }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .pwa-install-prompt,
+  .connection-indicator {
+    animation: none;
+    transition: none;
+  }
+  
+  .connection-indicator.offline::before {
+    animation: none;
+  }
+  
+  .notification.pwa-update {
+    animation: none;
+  }
+}
+
+/* ======================================
+   PWA DARK THEME ADJUSTMENTS
+   ====================================== */
+
+:root[data-theme="dark"] .pwa-install-prompt {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  box-shadow: 0 10px 40px rgba(37, 99, 235, 0.4);
+}
+
+:root[data-theme="dark"] .connection-indicator.online {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+:root[data-theme="dark"] .connection-indicator.offline {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+:root[data-theme="dark"] .offline-notice {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.3);
+}

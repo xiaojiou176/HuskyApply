@@ -1,0 +1,1002 @@
+/* 
+ * Enhanced UI/UX Styles - Advanced Interactions & Animations
+ * Provides modern micro-interactions, animations, and enhanced user experience
+ */
+
+/* ======================================
+   ENHANCED ANIMATIONS & MICRO-INTERACTIONS
+   ====================================== */
+
+/* Smooth fade-in animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(37, 99, 235, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(37, 99, 235, 0.6);
+  }
+}
+
+/* Staggered animation for form elements */
+.animate-fade-in {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.animate-fade-in-delayed {
+  animation: fadeInUp 0.6s ease-out 0.2s forwards;
+  opacity: 0;
+}
+
+.animate-scale-in {
+  animation: fadeInScale 0.4s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slideInFromRight 0.5s ease-out forwards;
+}
+
+/* ======================================
+   ENHANCED BUTTON INTERACTIONS
+   ====================================== */
+
+.btn-enhanced {
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.btn-enhanced::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn-enhanced:hover::before {
+  left: 100%;
+}
+
+.btn-enhanced:active {
+  transform: scale(0.98);
+}
+
+/* Floating action button */
+.fab {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+
+.fab:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
+}
+
+.fab:active {
+  transform: scale(0.95);
+}
+
+/* ======================================
+   ENHANCED FORM INTERACTIONS
+   ====================================== */
+
+/* Floating label effect */
+.floating-label {
+  position: relative;
+  margin-bottom: 2rem;
+}
+
+.floating-label input,
+.floating-label textarea,
+.floating-label select {
+  width: 100%;
+  padding: 1rem 0.75rem 0.5rem 0.75rem;
+  border: 2px solid var(--gray-300);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  background: transparent;
+  transition: all 0.3s ease;
+}
+
+.floating-label label {
+  position: absolute;
+  left: 0.75rem;
+  top: 1rem;
+  font-size: 1rem;
+  color: var(--gray-500);
+  transition: all 0.3s ease;
+  pointer-events: none;
+  background: white;
+  padding: 0 0.25rem;
+}
+
+.floating-label input:focus,
+.floating-label input:not(:placeholder-shown),
+.floating-label textarea:focus,
+.floating-label textarea:not(:placeholder-shown),
+.floating-label select:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.floating-label input:focus + label,
+.floating-label input:not(:placeholder-shown) + label,
+.floating-label textarea:focus + label,
+.floating-label textarea:not(:placeholder-shown) + label,
+.floating-label select:focus + label {
+  top: -0.5rem;
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* Enhanced file upload with drag & drop */
+.file-upload-zone {
+  position: relative;
+  border: 3px dashed var(--gray-300);
+  border-radius: var(--radius-lg);
+  padding: 3rem 2rem;
+  text-align: center;
+  background: var(--gray-50);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.file-upload-zone:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.file-upload-zone.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  transform: scale(1.02);
+  box-shadow: 0 8px 25px rgba(37, 99, 235, 0.15);
+}
+
+.file-upload-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  color: var(--gray-400);
+  transition: all 0.3s ease;
+}
+
+.file-upload-zone:hover .file-upload-icon,
+.file-upload-zone.drag-over .file-upload-icon {
+  color: var(--primary);
+  transform: scale(1.1);
+}
+
+/* ======================================
+   ENHANCED PROGRESS & LOADING STATES
+   ====================================== */
+
+/* Skeleton loading animation */
+@keyframes skeleton-pulse {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200px 100%;
+  animation: skeleton-pulse 2s infinite;
+  border-radius: var(--radius);
+}
+
+.skeleton-text {
+  height: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-text:last-child {
+  width: 60%;
+}
+
+/* Advanced progress indicator */
+.progress-ring {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 2rem auto;
+}
+
+.progress-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.progress-ring circle {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.progress-ring .progress-ring-bg {
+  stroke: var(--gray-200);
+}
+
+.progress-ring .progress-ring-fill {
+  stroke: var(--primary);
+  stroke-dasharray: 0 283;
+  transition: stroke-dasharray 0.3s ease;
+}
+
+.progress-percentage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* Typing indicator for streaming */
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--gray-100);
+  border-radius: 1rem;
+  margin: 0.5rem 0;
+}
+
+.typing-indicator::after {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: typing-blink 1.4s infinite;
+}
+
+.typing-indicator::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: typing-blink 1.4s infinite 0.2s;
+  margin-right: 4px;
+}
+
+@keyframes typing-blink {
+  0%, 60%, 100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+/* ======================================
+   ENHANCED CARDS & CONTAINERS
+   ====================================== */
+
+.card-interactive {
+  transform: translateZ(0);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.card-interactive:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+.card-interactive:active {
+  transform: translateY(-2px) scale(0.99);
+}
+
+/* Glass morphism effect */
+.glass-card {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+
+/* Gradient border effect */
+.gradient-border {
+  position: relative;
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: 1px;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 2px;
+  background: linear-gradient(45deg, var(--primary), var(--info), var(--primary));
+  border-radius: inherit;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* ======================================
+   NOTIFICATION SYSTEM
+   ====================================== */
+
+.notification-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.notification {
+  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  padding: 1rem 1.5rem;
+  margin-bottom: 1rem;
+  border-left: 4px solid;
+  transform: translateX(400px);
+  animation: slideInNotification 0.5s ease-out forwards;
+  pointer-events: all;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  max-width: 400px;
+}
+
+.notification:hover {
+  transform: translateX(-5px);
+}
+
+.notification.notification-success {
+  border-left-color: var(--success);
+  background: linear-gradient(90deg, var(--success-light), white);
+}
+
+.notification.notification-error {
+  border-left-color: var(--error);
+  background: linear-gradient(90deg, var(--error-light), white);
+}
+
+.notification.notification-info {
+  border-left-color: var(--info);
+  background: linear-gradient(90deg, var(--info-light), white);
+}
+
+.notification.notification-warning {
+  border-left-color: var(--warning);
+  background: linear-gradient(90deg, var(--warning-light), white);
+}
+
+@keyframes slideInNotification {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ======================================
+   ENHANCED STREAMING UI
+   ====================================== */
+
+.streaming-container {
+  position: relative;
+  border-radius: var(--radius-lg);
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.streaming-header {
+  background: linear-gradient(135deg, var(--primary), var(--info));
+  color: white;
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.streaming-content {
+  padding: 1.5rem;
+  min-height: 200px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  position: relative;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: var(--primary);
+  animation: cursor-blink 1s infinite;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+}
+
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.streaming-metrics {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: var(--gray-50);
+  border-top: 1px solid var(--gray-200);
+  font-size: 0.875rem;
+  color: var(--gray-600);
+}
+
+.metric-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.metric-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.metric-icon.tokens {
+  background: var(--info);
+}
+
+.metric-icon.quality {
+  background: var(--success);
+}
+
+.metric-icon.cost {
+  background: var(--warning);
+}
+
+/* ======================================
+   RESPONSIVE ENHANCEMENTS
+   ====================================== */
+
+@media (max-width: 768px) {
+  .fab {
+    bottom: 1rem;
+    right: 1rem;
+    width: 48px;
+    height: 48px;
+    font-size: 1.25rem;
+  }
+  
+  .notification-container {
+    top: 0.5rem;
+    right: 0.5rem;
+    left: 0.5rem;
+  }
+  
+  .notification {
+    transform: translateY(-100px);
+    animation: slideInNotificationMobile 0.5s ease-out forwards;
+    max-width: none;
+  }
+  
+  .streaming-content {
+    padding: 1rem;
+  }
+  
+  .streaming-metrics {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+}
+
+@keyframes slideInNotificationMobile {
+  from {
+    transform: translateY(-100px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ======================================
+   DARK THEME SYSTEM
+   ====================================== */
+
+:root[data-theme="dark"] {
+  --primary: #60a5fa;
+  --primary-light: #3b82f6;
+  --primary-dark: #1d4ed8;
+  --secondary: #a78bfa;
+  --accent: #f59e0b;
+  --success: #10b981;
+  --error: #ef4444;
+  --warning: #f59e0b;
+  --info: #3b82f6;
+  
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  
+  --bg-primary: #111827;
+  --bg-secondary: #1f2937;
+  --bg-tertiary: #374151;
+  
+  --gray-50: #374151;
+  --gray-100: #4b5563;
+  --gray-200: #6b7280;
+  --gray-300: #9ca3af;
+  --gray-400: #d1d5db;
+  --gray-500: #f3f4f6;
+  --gray-600: #f9fafb;
+  --gray-900: #ffffff;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 2px solid var(--gray-200);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  transition: all 0.3s ease;
+  z-index: 1001;
+  backdrop-filter: blur(10px);
+}
+
+.theme-toggle:hover {
+  background: var(--primary);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(var(--primary), 0.3);
+}
+
+.theme-toggle .icon-sun,
+.theme-toggle .icon-moon {
+  transition: all 0.3s ease;
+}
+
+:root[data-theme="light"] .theme-toggle .icon-moon {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-toggle .icon-sun {
+  display: none;
+}
+
+/* ======================================
+   ADVANCED COMPONENT INTERACTIONS
+   ====================================== */
+
+/* Interactive tabs with smooth indicator */
+.tabs-container {
+  position: relative;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.tab-item {
+  position: relative;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 2;
+}
+
+.tab-item:hover {
+  color: var(--text-primary);
+}
+
+.tab-item.active {
+  color: var(--primary);
+}
+
+.tab-indicator {
+  position: absolute;
+  background: var(--bg-primary);
+  border-radius: var(--radius);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Interactive accordion with smooth animations */
+.accordion-item {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  transition: all 0.3s ease;
+}
+
+.accordion-header {
+  padding: 1.25rem 1.5rem;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  display: flex;
+  justify-content: between;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.accordion-header:hover {
+  background: var(--bg-tertiary);
+}
+
+.accordion-icon {
+  transition: transform 0.3s ease;
+}
+
+.accordion-item.active .accordion-icon {
+  transform: rotate(180deg);
+}
+
+.accordion-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.accordion-item.active .accordion-content {
+  max-height: 1000px;
+}
+
+.accordion-body {
+  padding: 0 1.5rem 1.5rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Interactive tooltip system */
+.tooltip-trigger {
+  position: relative;
+  cursor: help;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--gray-200);
+}
+
+.tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--bg-primary);
+}
+
+.tooltip-trigger:hover .tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-4px);
+}
+
+/* ======================================
+   ADVANCED MOTION DESIGN
+   ====================================== */
+
+/* Morphing loader */
+@keyframes morphing-loader {
+  0% {
+    border-radius: 50%;
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    border-radius: 25% 75%;
+    transform: rotate(90deg) scale(1.1);
+  }
+  50% {
+    border-radius: 0%;
+    transform: rotate(180deg) scale(1);
+  }
+  75% {
+    border-radius: 75% 25%;
+    transform: rotate(270deg) scale(1.1);
+  }
+  100% {
+    border-radius: 50%;
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+.morphing-loader {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(45deg, var(--primary), var(--secondary));
+  animation: morphing-loader 2s infinite ease-in-out;
+  margin: 2rem auto;
+}
+
+/* Parallax scroll effect */
+.parallax-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+
+.parallax-element {
+  transition: transform 0.1s ease-out;
+}
+
+/* Advanced hover effects */
+.hover-lift {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.hover-tilt {
+  perspective: 1000px;
+  transition: transform 0.3s ease;
+}
+
+.hover-tilt:hover {
+  transform: rotateX(5deg) rotateY(5deg) scale(1.02);
+}
+
+/* Magnetic button effect */
+.magnetic-button {
+  position: relative;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+/* Ripple effect enhancement */
+.ripple-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0);
+  animation: ripple-animation 0.6s ease-out;
+  pointer-events: none;
+}
+
+@keyframes ripple-animation {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+/* ======================================
+   ENHANCED MICRO-INTERACTIONS
+   ====================================== */
+
+/* Interactive like button */
+.like-button {
+  position: relative;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: var(--gray-400);
+}
+
+.like-button:hover {
+  transform: scale(1.1);
+  color: var(--error);
+}
+
+.like-button.liked {
+  color: var(--error);
+  animation: heart-pulse 0.6s ease-out;
+}
+
+@keyframes heart-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+/* Interactive rating stars */
+.rating-container {
+  display: flex;
+  gap: 0.25rem;
+  margin: 1rem 0;
+}
+
+.rating-star {
+  font-size: 1.5rem;
+  color: var(--gray-300);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.rating-star:hover,
+.rating-star.active {
+  color: var(--warning);
+  transform: scale(1.1);
+}
+
+.rating-star:hover ~ .rating-star {
+  color: var(--gray-300);
+  transform: scale(1);
+}
+
+/* Smooth counter animation */
+.animated-counter {
+  font-weight: 700;
+  font-size: 2rem;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ======================================
+   ACCESSIBILITY ENHANCEMENTS
+   ====================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-enhanced::before,
+  .card-interactive,
+  .streaming-cursor,
+  .typing-indicator::before,
+  .typing-indicator::after,
+  .morphing-loader,
+  .parallax-element,
+  .hover-lift,
+  .hover-tilt,
+  .magnetic-button,
+  .like-button,
+  .rating-star {
+    animation: none;
+    transition: none;
+  }
+  
+  .card-interactive:hover,
+  .fab:hover,
+  .hover-lift:hover,
+  .hover-tilt:hover {
+    transform: none;
+  }
+}
+
+/* Enhanced focus indicators */
+.btn-enhanced:focus-visible,
+.card-interactive:focus-visible,
+.tab-item:focus-visible,
+.accordion-header:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--primary), 0.2);
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .glass-card {
+    background: var(--bg-secondary);
+    backdrop-filter: none;
+    border: 2px solid var(--text-primary);
+  }
+  
+  .notification {
+    border: 2px solid;
+    border-left-width: 4px;
+  }
+  
+  .theme-toggle {
+    border-width: 3px;
+  }
+}
+
+/* Screen reader only content */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
