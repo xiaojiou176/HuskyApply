@@ -34,7 +34,7 @@ A complete 3-tier microservices platform for AI-powered job application automati
 
 ### Enterprise Architecture Showcase
 - **Subscription System Demo** - Complete multi-tier billing system implementation (Stripe integration)
-- **Team Features Demo** - Role-based access control and collaboration patterns  
+- **Team Features Demo** - Role-based access control and collaboration patterns
 - **Payment Integration** - Full payment processing workflow demonstration
 - **Analytics Dashboard** - Real-time metrics and business intelligence implementation
 - **Cloud-Native Deployment** - Multi-region Kubernetes with auto-scaling capabilities
@@ -59,23 +59,23 @@ graph TB
         FE[Frontend<br/>Vanilla JS + HTML5]
         CDN[CDN<br/>CloudFlare/CloudFront]
     end
-    
+
     subgraph "API Gateway Tier"
         LB[Load Balancer<br/>Nginx/K8s Ingress]
         GW[Java Gateway<br/>Spring Boot 3.2.10]
     end
-    
+
     subgraph "Processing Tier"
         BR[Python Brain<br/>FastAPI + LangChain]
         MQ[Message Queue<br/>RabbitMQ 3.12]
     end
-    
+
     subgraph "Data Tier"
         DB[(PostgreSQL 16<br/>Primary Database)]
         RD[(Redis 7.2<br/>Cache + Rate Limiting)]
         S3[AWS S3<br/>File Storage]
     end
-    
+
     FE --> CDN
     CDN --> LB
     LB --> GW
@@ -143,7 +143,7 @@ curl http://localhost:3000                 # Frontend
 ### 3. Manual Development Setup
 
 ```bash
-# Start infrastructure services  
+# Start infrastructure services
 docker-compose -f ops/infra/docker-compose.yml up -d postgres-db rabbitmq-server redis-server
 
 # Start Gateway (Terminal 1)
@@ -207,7 +207,7 @@ mvn clean compile                    # Compile
 mvn test                            # Run tests
 mvn spring-boot:run                 # Start locally
 
-# Brain Service  
+# Brain Service
 cd brain
 uv sync --extra test                # Install dependencies
 uv run pytest tests/ -v            # Run tests
@@ -225,13 +225,13 @@ docker-compose down                 # Stop services
 ```
 huskyapply/
 ├── brain/              # Python AI Processing Service
-├── gateway/            # Java Spring Boot API Gateway  
+├── gateway/            # Java Spring Boot API Gateway
 ├── frontend/           # Vanilla JavaScript UI
 │   ├── index.html     # Main entry point
 │   └── experiments/   # Additional demo pages
 ├── ops/               # Operations and infrastructure
 │   ├── infra/         # Docker Compose configuration
-│   ├── k8s/           # Kubernetes manifests  
+│   ├── k8s/           # Kubernetes manifests
 │   └── scripts/       # Deployment scripts
 ├── docs/              # Core documentation
 │   ├── architecture.md
@@ -273,7 +273,7 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
 
 ### Production Capacity
 - **10,000+** concurrent users
-- **1,000+** requests/second throughput  
+- **1,000+** requests/second throughput
 - **100+** parallel AI generations
 - **4 regions** with auto-failover
 - **99.9%** uptime SLA guarantee
@@ -349,7 +349,7 @@ The code isn't perfect - there are definitely some areas I'd refactor if I were 
 
 ### Advanced AI Integration Concepts
 - **Custom Model Fine-tuning** - MLOps pipeline with model versioning
-- **Reinforcement Learning** - Success prediction based on application outcomes  
+- **Reinforcement Learning** - Success prediction based on application outcomes
 - **A/B Testing Framework** - Systematic experimentation platform
 - **API Integration Hub** - Third-party service integration patterns
 
@@ -364,12 +364,11 @@ The code isn't perfect - there are definitely some areas I'd refactor if I were 
 ## 📞 Get In Touch
 
 ### 👨‍💻 About Me
-- **Name**: Yifeng Yu  
+- **Name**: Yifeng Yu
 - **GitHub**: [@xiaojiou176](https://github.com/xiaojiou176)
-- **Status**: Actively looking for software engineering opportunities
 - **This Project**: A personal learning exercise I'm proud to share
 
-### 📋 Project Status  
+### 📋 Project Status
 - **Started**: As a weekend learning project
 - **Current Status**: Functional but still learning and improving
 - **Open Source**: Recently decided to make it public for portfolio purposes
@@ -378,7 +377,7 @@ The code isn't perfect - there are definitely some areas I'd refactor if I were 
 ### 🎯 For Potential Employers
 If you're reviewing this for a job application, here's what I hope it shows:
 - I enjoy learning complex technologies in my spare time
-- I can work through architectural challenges independently  
+- I can work through architectural challenges independently
 - I'm not afraid to tackle unfamiliar tech stacks
 - I care about code quality and documentation (even for personal projects)
 
@@ -392,14 +391,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## Code Authorship Statement
-
-This repository contains code written entirely by me, Yifeng Yu. While the application integrates with AI APIs (OpenAI, Anthropic) as its core functionality, all source code, documentation, configuration, and system design are my original work. No AI-generated code, templates, or boilerplate were used in creating this project.
-
 ## Acknowledgments
 
 - **OpenAI** - GPT-4 and GPT-3.5 Turbo API services
-- **Anthropic** - Claude API services  
+- **Anthropic** - Claude API services
 - **Spring Boot** - Java framework
 - **FastAPI** - Python framework
 - **LangChain** - AI application framework
