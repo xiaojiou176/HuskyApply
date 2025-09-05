@@ -1,0 +1,288 @@
+package com.huskyapply.gateway.config;
+
+import com.huskyapply.gateway.grpc.GatewayCallbackServiceImpl;
+import io.grpc.Server;
+import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
+
+/**
+ * Configuration for Gateway gRPC server to handle callbacks from Brain service. Enables
+ * bidirectional gRPC communication replacing HTTP callbacks.
+ *
+ * <p>Features: - High-performance Netty-based gRPC server - Connection multiplexing and keepalive
+ * configuration - Comprehensive metrics collection - Graceful shutdown handling - Thread pool
+ * optimization for concurrent processing
+ */
+@Configuration
+@ConditionalOnProperty(
+    name = "grpc.gateway.server.enabled",
+    havingValue = "true",
+    matchIfMissing = true)
+public class GrpcServerConfig {
+
+  private static final Logger logger = LoggerFactory.getLogger(GrpcServerConfig.class);
+
+  @Value("${grpc.gateway.server.port:9091}")
+  private int serverPort;
+
+  @Value("${grpc.gateway.server.max-inbound-message-size:4194304}")
+  private int maxInboundMessageSize; // 4MB
+
+  @Value("${grpc.gateway.server.max-concurrent-calls-per-connection:1000}")
+  private int maxConcurrentCallsPerConnection;
+
+  @Value("${grpc.gateway.server.keepalive-time:30}")
+  private long keepAliveTime; // seconds
+
+  @Value("${grpc.gateway.server.keepalive-timeout:10}")
+  private long keepAliveTimeout; // seconds
+
+  @Value("${grpc.gateway.server.permit-keepalive-without-calls:true}")
+  private boolean permitKeepAliveWithoutCalls;
+
+  @Value("${grpc.gateway.server.executor-threads:20}")
+  private int executorThreads;
+
+  // Server state
+  private Server grpcServer;
+  private final AtomicBoolean serverRunning = new AtomicBoolean(false);
+  private final AtomicInteger activeConnections = new AtomicInteger(0);
+
+  // Metrics
+  private final Counter requestsReceived;
+  private final Counter requestsCompleted;
+  private final Counter requestsFailed;
+  private final Timer requestProcessingTime;
+
+  public GrpcServerConfig(MeterRegistry meterRegistry) {
+    // Initialize metrics
+    this.requestsReceived =
+        Counter.builder("grpc_gateway_requests_received_total")
+            .description("Total gRPC requests received by Gateway")
+            .register(meterRegistry);
+
+    this.requestsCompleted =
+        Counter.builder("grpc_gateway_requests_completed_total")
+            .description("Total gRPC requests completed successfully")
+            .register(meterRegistry);
+
+    this.requestsFailed =
+        Counter.builder("grpc_gateway_requests_failed_total")
+            .description("Total gRPC requests that failed")
+            .register(meterRegistry);
+
+    this.requestProcessingTime =
+        Timer.builder("grpc_gateway_request_processing_duration")
+            .description("Time to process gRPC requests")
+            .register(meterRegistry);
+
+    // Register gauge for active connections
+    Gauge.builder("grpc_gateway_active_connections")
+        .description("Number of active gRPC connections")
+        .register(meterRegistry, this, config -> config.activeConnections.get());
+  }
+
+  @Bean
+  @DependsOn("gatewayCallbackServiceImpl")
+  public Server grpcServer(GatewayCallbackServiceImpl gatewayCallbackService) throws IOException {
+    logger.info("Initializing Gateway gRPC server on port {}", serverPort);
+
+    // Create optimized event loop group
+    int eventLoopThreads = Math.max(2, Runtime.getRuntime().availableProcessors() / 2);
+    NioEventLoopGroup bossGroup = new NioEventLoopGroup(1);
+    NioEventLoopGroup workerGroup = new NioEventLoopGroup(eventLoopThreads);
+
+    // Build server with optimized Netty transport
+    NettyServerBuilder serverBuilder =
+        NettyServerBuilder.forPort(serverPort)
+            .bossEventLoopGroup(bossGroup)
+            .workerEventLoopGroup(workerGroup)
+            .executor(Executors.newFixedThreadPool(executorThreads))
+
+            // Add the callback service
+            .addService(gatewayCallbackService)
+
+            // Configure message sizes
+            .maxInboundMessageSize(maxInboundMessageSize)
+            .maxInboundMetadataSize(8192)
+
+            // Configure connection limits
+            .maxConcurrentCallsPerConnection(maxConcurrentCallsPerConnection)
+
+            // Configure keepalive settings
+            .keepAliveTime(keepAliveTime, TimeUnit.SECONDS)
+            .keepAliveTimeout(keepAliveTimeout, TimeUnit.SECONDS)
+            .permitKeepAliveWithoutCalls(permitKeepAliveWithoutCalls)
+            .permitKeepAliveTime(10, TimeUnit.SECONDS)
+
+            // Enable connection multiplexing
+            .maxConnectionIdle(300, TimeUnit.SECONDS)
+            .maxConnectionAge(30, TimeUnit.MINUTES)
+            .maxConnectionAgeGrace(5, TimeUnit.MINUTES)
+
+            // Add interceptors for metrics and tracing
+            .intercept(
+                new GrpcServerInterceptor(
+                    requestsReceived, requestsCompleted, requestsFailed, requestProcessingTime));
+
+    grpcServer = serverBuilder.build();
+
+    // Start the server
+    grpcServer.start();
+    serverRunning.set(true);
+
+    logger.info(
+        "Gateway gRPC server started successfully on port {} with {} executor threads",
+        serverPort,
+        executorThreads);
+
+    // Add shutdown hook
+    Runtime.getRuntime()
+        .addShutdownHook(
+            new Thread(
+                () -> {
+                  logger.info("Shutting down Gateway gRPC server due to JVM shutdown");
+                  stopGrpcServer();
+                }));
+
+    return grpcServer;
+  }
+
+  /** Get server statistics for monitoring. */
+  public GrpcServerStats getServerStats() {
+    return new GrpcServerStats(
+        serverRunning.get(),
+        serverPort,
+        activeConnections.get(),
+        grpcServer != null ? grpcServer.getServices().size() : 0);
+  }
+
+  /** Gracefully stop the gRPC server. */
+  @PreDestroy
+  public void stopGrpcServer() {
+    if (grpcServer != null && serverRunning.get()) {
+      logger.info("Initiating graceful shutdown of Gateway gRPC server");
+
+      try {
+        // Initiate graceful shutdown
+        grpcServer.shutdown();
+
+        // Wait for shutdown to complete
+        if (!grpcServer.awaitTermination(30, TimeUnit.SECONDS)) {
+          logger.warn(
+              "gRPC server did not shutdown gracefully within 30 seconds, forcing shutdown");
+          grpcServer.shutdownNow();
+
+          // Wait a bit more for forced shutdown
+          if (!grpcServer.awaitTermination(10, TimeUnit.SECONDS)) {
+            logger.error("gRPC server did not terminate after forced shutdown");
+          }
+        }
+
+        serverRunning.set(false);
+        logger.info("Gateway gRPC server shutdown completed");
+
+      } catch (InterruptedException e) {
+        logger.warn("Interrupted while shutting down gRPC server");
+        grpcServer.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  /** gRPC server interceptor for metrics and request tracking. */
+  public static class GrpcServerInterceptor implements io.grpc.ServerInterceptor {
+    private final Counter requestsReceived;
+    private final Counter requestsCompleted;
+    private final Counter requestsFailed;
+    private final Timer requestProcessingTime;
+
+    public GrpcServerInterceptor(
+        Counter requestsReceived,
+        Counter requestsCompleted,
+        Counter requestsFailed,
+        Timer requestProcessingTime) {
+      this.requestsReceived = requestsReceived;
+      this.requestsCompleted = requestsCompleted;
+      this.requestsFailed = requestsFailed;
+      this.requestProcessingTime = requestProcessingTime;
+    }
+
+    @Override
+    public <ReqT, RespT> io.grpc.ServerCall.Listener<ReqT> interceptCall(
+        io.grpc.ServerCall<ReqT, RespT> call,
+        io.grpc.Metadata headers,
+        io.grpc.ServerCallHandler<ReqT, RespT> next) {
+
+      requestsReceived.increment();
+      Timer.Sample sample = Timer.start();
+
+      return new io.grpc.ForwardingServerCallListener.SimpleForwardingServerCallListener<ReqT>(
+          next.startCall(
+              new io.grpc.ForwardingServerCall.SimpleForwardingServerCall<ReqT, RespT>(call) {
+                @Override
+                public void close(io.grpc.Status status, io.grpc.Metadata trailers) {
+                  sample.stop(requestProcessingTime);
+
+                  if (status.isOk()) {
+                    requestsCompleted.increment();
+                  } else {
+                    requestsFailed.increment();
+                  }
+
+                  super.close(status, trailers);
+                }
+              },
+              headers)) {};
+    }
+  }
+
+  /** Server statistics for monitoring and health checks. */
+  public static class GrpcServerStats {
+    private final boolean running;
+    private final int port;
+    private final int activeConnections;
+    private final int registeredServices;
+
+    public GrpcServerStats(
+        boolean running, int port, int activeConnections, int registeredServices) {
+      this.running = running;
+      this.port = port;
+      this.activeConnections = activeConnections;
+      this.registeredServices = registeredServices;
+    }
+
+    public boolean isRunning() {
+      return running;
+    }
+
+    public int getPort() {
+      return port;
+    }
+
+    public int getActiveConnections() {
+      return activeConnections;
+    }
+
+    public int getRegisteredServices() {
+      return registeredServices;
+    }
+  }
+}

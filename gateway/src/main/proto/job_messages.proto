@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package com.huskyapply.gateway.proto;
+
+option java_package = "com.huskyapply.gateway.proto";
+option java_outer_classname = "JobMessagesProto";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+// Priority levels for job processing
+enum Priority {
+  PRIORITY_NORMAL = 0;
+  PRIORITY_HIGH = 1;
+  PRIORITY_EXPRESS = 2;
+  PRIORITY_URGENT = 3;
+}
+
+// AI model provider options
+enum ModelProvider {
+  OPENAI = 0;
+  ANTHROPIC = 1;
+  GOOGLE = 2;
+  LOCAL = 3;
+}
+
+// Job processing status
+enum JobStatus {
+  PENDING = 0;
+  PROCESSING = 1;
+  COMPLETED = 2;
+  FAILED = 3;
+  CANCELLED = 4;
+}
+
+// Individual job message for single job processing
+message JobMessage {
+  string job_id = 1;
+  string jd_url = 2;
+  string resume_uri = 3;
+  ModelProvider model_provider = 4;
+  string model_name = 5;
+  string user_id = 6;
+  Priority priority = 7;
+  google.protobuf.Timestamp created_at = 8;
+  string trace_id = 9;
+  
+  // Optional job preferences
+  map<string, string> preferences = 10;
+  
+  // Retry information
+  int32 retry_count = 11;
+  string original_message_id = 12;
+}
+
+// Batch job message for multiple job processing
+message BatchJobMessage {
+  string batch_id = 1;
+  string user_id = 2;
+  repeated JobMessage jobs = 3;
+  Priority priority = 4;
+  ModelProvider model_provider = 5;
+  string model_name = 6;
+  google.protobuf.Timestamp created_at = 7;
+  string trace_id = 8;
+  
+  // Batch processing preferences
+  int32 max_parallel_jobs = 9;
+  int32 batch_timeout_seconds = 10;
+  bool fail_fast = 11;
+}
+
+// Status update message sent back to Gateway
+message StatusUpdateMessage {
+  string job_id = 1;
+  JobStatus status = 2;
+  string content = 3;
+  string error_message = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  string trace_id = 6;
+  
+  // Processing metrics
+  int32 processing_time_ms = 7;
+  int32 word_count = 8;
+  map<string, string> metadata = 9;
+}
+
+// Progress update message for batch jobs
+message BatchProgressMessage {
+  string batch_id = 1;
+  int32 total_jobs = 2;
+  int32 completed_jobs = 3;
+  int32 failed_jobs = 4;
+  repeated StatusUpdateMessage job_updates = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  string trace_id = 7;
+  
+  // Estimated completion time
+  int32 estimated_remaining_seconds = 8;
+}
+
+// Message wrapper for routing and metadata
+message MessageEnvelope {
+  string message_id = 1;
+  string correlation_id = 2;
+  Priority priority = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  string source_service = 5;
+  string target_service = 6;
+  
+  // Routing information
+  string routing_key = 7;
+  string reply_to = 8;
+  int32 expiration_seconds = 9;
+  
+  // Compression information
+  CompressionType compression = 10;
+  
+  // Message payload (one of the following)
+  oneof payload {
+    JobMessage job = 11;
+    BatchJobMessage batch_job = 12;
+    StatusUpdateMessage status_update = 13;
+    BatchProgressMessage batch_progress = 14;
+  }
+}
+
+// Compression types supported
+enum CompressionType {
+  NONE = 0;
+  GZIP = 1;
+  LZ4 = 2;
+  SNAPPY = 3;
+}
+
+// Health check message for queue monitoring
+message HealthCheckMessage {
+  string service_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  map<string, string> metrics = 3;
+}
+
+// Acknowledgment messages
+message EventAck {
+  string message_id = 1;
+  bool success = 2;
+  string error_message = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message StatusUpdateAck {
+  string job_id = 1;
+  bool success = 2;
+  string error_message = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+// Job status update for callback
+message JobStatusUpdate {
+  string job_id = 1;
+  JobStatus status = 2;
+  string content = 3;
+  string error_message = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+// Gateway callback service for Brain to Gateway communication
+service GatewayCallbackService {
+  // Notify gateway of job status updates
+  rpc NotifyJobStatus(JobStatusUpdate) returns (StatusUpdateAck);
+  
+  // Send event notifications
+  rpc SendEvent(StatusUpdateMessage) returns (EventAck);
+  
+  // Health check endpoint
+  rpc HealthCheck(HealthCheckMessage) returns (EventAck);
+}
