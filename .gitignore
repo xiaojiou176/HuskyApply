@@ -1,0 +1,78 @@
+# --- Python (brain) ---
+__pycache__/
+*.py[cod]
+.venv/
+.uv/
+dist/
+build/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+htmlcov/
+
+# --- Java/Gradle/Maven (gateway, ops/proto) ---
+**/target/
+**/build/
+.gradle/
+.mvn/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+.classpath
+.project
+.settings/
+hs_err_pid*
+
+# --- Frontend (静态/可能有 node) ---
+node_modules/
+**/.cache/
+npm-debug.log*
+yarn-error.log*
+
+# --- Logs & Coverage ---
+*.log
+coverage/
+.coverage*
+htmlcov/
+
+# --- Docs site build ---
+docs/_build/
+site/
+
+# --- OS/IDE ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- Secrets / Local env ---
+.env
+.env.*
+*.pem
+*.key
+*.crt
+ops/k8s/secrets.yaml
+!ops/k8s/secrets.example.yaml
+
+# --- Project-specific ---
+ops/infra/proto/build/
+frontend/experiments/
+docs/code-examples/
+
+# --- Office/design 禁止入库 ---
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+*.pages
+*.numbers
+*.sketch
+*.fig
