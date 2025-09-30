@@ -266,30 +266,6 @@ kubectl apply -f ops/k8s/monitoring.yaml
 # Access Grafana
 kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
 ```
-
----
-
-## 📊 Performance Metrics
-
-### Production Capacity
-- **10,000+** concurrent users
-- **1,000+** requests/second throughput
-- **100+** parallel AI generations
-- **4 regions** with auto-failover
-- **99.9%** uptime SLA guarantee
-
-### Processing Performance
-- **<200ms** API response time (95th percentile)
-- **30-180s** AI generation time (model dependent)
-- **<1s** Server-Sent Event delivery
-- **Direct S3** uploads with pre-signed URLs
-
-### Business Metrics
-- **95%+** AI processing success rate
-- **4.8/5** user satisfaction score
-- **85%+** high confidence content ratings
-- **60%** reduction in support tickets
-
 ---
 
 ## 🔐 Security
@@ -373,13 +349,6 @@ The code isn't perfect - there are definitely some areas I'd refactor if I were 
 - **Current Status**: Functional but still learning and improving
 - **Open Source**: Recently decided to make it public for portfolio purposes
 - **Not Commercial**: This is purely for learning and demonstration
-
-### 🎯 For Potential Employers
-If you're reviewing this for a job application, here's what I hope it shows:
-- I enjoy learning complex technologies in my spare time
-- I can work through architectural challenges independently
-- I'm not afraid to tackle unfamiliar tech stacks
-- I care about code quality and documentation (even for personal projects)
 
 Feel free to ask questions about any part of the implementation!
 
