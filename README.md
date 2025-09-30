@@ -1,6 +1,6 @@
 > **HuskyApply — Personal Practice Project (Non-Commercial)**
 >
-> Solo project, recently open-sourced for portfolio review. Hand-written code; no AI-generated sources.
+> Solo project, recently open-sourced for portfolio review. 
 > English-only repository with no proprietary data or secrets.
 > This repository is entirely authored by me - no third-party vendors or team contributions.
 
