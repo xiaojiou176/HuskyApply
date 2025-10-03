@@ -1,13 +1,13 @@
 > **HuskyApply — Personal Practice Project (Non-Commercial)**
 >
-> Solo project, recently open-sourced for portfolio review. 
+> Solo project, recently open-sourced for portfolio review.
 > English-only repository with no proprietary data or secrets.
 > This repository is entirely authored by me - no third-party vendors or team contributions.
 
 # HuskyApply
 
 <div align="center">
-  <img src="https://img.shields.io/badge/Status-Production%20Ready-green" alt="Production Ready" />
+  <img src="https://img.shields.io/badge/Status-Learning%20Project-blue" alt="Learning Project" />
   <img src="https://img.shields.io/badge/Java-17%2B-orange" alt="Java 17+" />
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python 3.11+" />
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License" />
@@ -17,22 +17,46 @@
 
 **Personal, non-commercial, newly open-sourced project by Yifeng Yu. A full-stack system with Python service (brain/), Java gateway (gateway/), and a web frontend (frontend/).**
 
-A complete 3-tier microservices platform for AI-powered job application automation. This project demonstrates modern distributed system architecture, spanning from Python AI processing services to Java Spring Boot APIs and vanilla JavaScript frontends.
+An experimental 3-tier microservices platform for AI-powered professional document generation. This project demonstrates modern distributed system architecture, spanning from Python AI processing services to Java Spring Boot APIs and vanilla JavaScript frontends.
 
-**Built entirely by me as hands-on practice with enterprise technologies. No team development or third-party code contributions.**
+**Developed as a comprehensive showcase of enterprise-grade microservices architecture and AI integration patterns.**
+
+---
+
+## About This Learning Journey
+
+This project represents months of learning and experimentation with technologies I wanted to understand better. As a software engineer, I'm passionate about distributed systems and AI, so I decided to build something that would let me explore both areas hands-on.
+
+### 🎯 What I Wanted to Learn
+
+- How to design microservices that actually scale (not just in theory)
+- Practical AI integration beyond simple API calls
+- Kubernetes deployment and monitoring in a real system
+- Building something complex enough to demonstrate advanced concepts
+
+### 💻 Technologies I Practiced With
+
+- **Backend Architecture** - Java Spring Boot for the gateway, Python FastAPI for AI processing
+- **Infrastructure** - Docker containers, Kubernetes orchestration, Redis caching
+- **AI/ML** - LangChain framework, multiple AI providers, prompt engineering
+- **Monitoring** - Prometheus metrics, distributed tracing, proper logging
+
+The code isn't perfect - there are definitely some areas I'd refactor if I were starting over, and I went through several iterations before landing on the current architecture. But that's part of the learning process!
 
 ---
 
 ## Features
 
 ### Core Capabilities
-- **AI-Powered Content Generation** - GPT-4, Claude, and multiple AI models for personalized cover letters
+
+- **AI-Powered Content Generation** - GPT-4, Claude, and multiple AI models for personalized document creation
 - **Real-time Processing** - Server-Sent Events for live progress tracking
-- **Batch Processing** - Submit multiple job applications simultaneously
-- **Template Management** - Save and reuse successful application templates
+- **Batch Processing** - Submit multiple document generation requests simultaneously
+- **Template Management** - Save and reuse successful document templates
 - **Multi-Model Support** - Choose between OpenAI, Anthropic, and other providers
 
 ### Enterprise Architecture Showcase
+
 - **Subscription System Demo** - Complete multi-tier billing system implementation (Stripe integration)
 - **Team Features Demo** - Role-based access control and collaboration patterns
 - **Payment Integration** - Full payment processing workflow demonstration
@@ -41,11 +65,12 @@ A complete 3-tier microservices platform for AI-powered job application automati
 
 > 💡 **Note**: These are fully functional technical demonstrations showcasing enterprise development patterns
 
-### Production Ready
+### System Resilience & Features
+
 - **Security** - JWT authentication, rate limiting, CORS protection, audit logging
 - **Monitoring** - Prometheus metrics, Grafana dashboards, distributed tracing
 - **Scalability** - Horizontal pod autoscaling, load balancing, CDN integration
-- **Reliability** - Circuit breakers, retry logic, graceful degradation, 99.9% uptime SLA
+- **Reliability** - Circuit breakers, retry logic, graceful degradation
 
 ---
 
@@ -90,14 +115,14 @@ graph TB
 
 ### Service Overview
 
-| Service | Technology | Port | Purpose |
-|---------|------------|------|---------|
-| **Frontend** | Vanilla JS, HTML5, CSS3 | 3000 | User interface and real-time updates |
-| **Gateway** | Spring Boot 3.2.10, Java 17 | 8080 | API gateway, authentication, orchestration |
-| **Brain** | FastAPI, Python 3.11+, LangChain | 8000 | AI processing and content generation |
-| **Database** | PostgreSQL 16 | 5432 | Primary data storage |
-| **Message Queue** | RabbitMQ 3.12 | 5672 | Asynchronous job processing |
-| **Cache** | Redis 7.2 | 6379 | Rate limiting and session management |
+| Service           | Technology                       | Port | Purpose                                    |
+| ----------------- | -------------------------------- | ---- | ------------------------------------------ |
+| **Frontend**      | Vanilla JS, HTML5, CSS3          | 3000 | User interface and real-time updates       |
+| **Gateway**       | Spring Boot 3.2.10, Java 17      | 8080 | API gateway, authentication, orchestration |
+| **Brain**         | FastAPI, Python 3.11+, LangChain | 8000 | AI processing and content generation       |
+| **Database**      | PostgreSQL 16                    | 5432 | Primary data storage                       |
+| **Message Queue** | RabbitMQ 3.12                    | 5672 | Asynchronous job processing                |
+| **Cache**         | Redis 7.2                        | 6379 | Rate limiting and session management       |
 
 ---
 
@@ -159,13 +184,13 @@ cd frontend && python -m http.server 3000
 ### 4. Test the System
 
 ```bash
-# Submit a test job application
+# Submit a test document generation request
 curl -X POST http://localhost:8080/api/v1/applications \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{
-    "jdUrl": "https://example.com/job-posting",
-    "resumeUri": "s3://bucket/resume.pdf",
+    "sourceUrl": "https://example.com/source-document",
+    "templateUri": "s3://bucket/template.pdf",
     "preferredModel": "gpt-4o"
   }'
 ```
@@ -177,9 +202,10 @@ curl -X POST http://localhost:8080/api/v1/applications \
 > 📝 **Recently Reorganized** - Documentation has been streamlined and consolidated for better navigation. Historical documents are preserved in [`docs/archive/`](docs/archive/) for reference.
 
 ### Quick Links
+
 - 📚 **[Complete Documentation](docs/README.md)** - Central documentation hub
 - 🚀 **[Developer Quick Start](docs/Development_Guide.md#getting-started)** - 5-minute setup for developers
-- 👤 **[User Guide](docs/User_Guide.md)** - Complete manual for job seekers
+- 👤 **[User Guide](docs/User_Guide.md)** - Complete user manual
 - 💻 **[Development Guide](docs/Development_Guide.md)** - Developer handbook
 - 🏗️ **[Architecture Guide](docs/architecture.md)** - System architecture deep dive
 - 🚢 **[Deployment Guide](docs/Deployment_Guide.md)** - Production deployment
@@ -187,11 +213,13 @@ curl -X POST http://localhost:8080/api/v1/applications \
 - 🆘 **[Troubleshooting Guide](docs/Troubleshooting_Guide.md)** - Issue resolution
 
 ### Learning Path
+
 1. **New Users**: Start with [User Guide](docs/User_Guide.md) → [FAQ](docs/FAQ.md)
 2. **Developers**: [Development Guide](docs/Development_Guide.md) → [Architecture](docs/architecture.md) → [API Docs](docs/API_Documentation.md)
 3. **Operations**: [Deployment Guide](docs/Deployment_Guide.md) → [Troubleshooting](docs/Troubleshooting_Guide.md)
 
 ### Project History
+
 - 📋 **[Project History](docs/project-history/Project_History.md)** - Development evolution and sprint milestones
 
 ---
@@ -245,16 +273,19 @@ huskyapply/
 ## 🏭 Production Deployment
 
 ### Single Region Deployment
+
 ```bash
 ./ops/scripts/deploy.sh production us-east-1
 ```
 
 ### Multi-Region Global Deployment
+
 ```bash
 ./ops/scripts/multi-region-deploy.sh
 ```
 
 ### Monitoring Setup
+
 ```bash
 # Install monitoring stack
 helm install monitoring prometheus-community/kube-prometheus-stack \
@@ -266,17 +297,20 @@ kubectl apply -f ops/k8s/monitoring.yaml
 # Access Grafana
 kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
 ```
+
 ---
 
 ## 🔐 Security
 
 ### Authentication & Authorization
+
 - **JWT Tokens** - HS384 signing, 24-hour expiration
 - **Role-Based Access Control** - Subscription tier permissions
 - **API Rate Limiting** - Redis-based sliding window
 - **CORS Protection** - Configured for frontend-backend communication
 
 ### Data Protection
+
 - **Encryption** - TLS/SSL in transit, database encryption at rest
 - **Audit Logging** - Comprehensive security event tracking
 - **Input Validation** - Request sanitization and validation
@@ -284,36 +318,16 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
 
 ---
 
-## About This Learning Journey
-
-This project represents months of learning and experimentation with technologies I wanted to understand better. As a software engineer, I'm passionate about distributed systems and AI, so I decided to build something that would let me explore both areas hands-on.
-
-### 🎯 What I Wanted to Learn
-- How to design microservices that actually scale (not just in theory)
-- Practical AI integration beyond simple API calls
-- Kubernetes deployment and monitoring in a real system
-- Building something complex enough to put on my resume
-
-### 💻 Technologies I Practiced With
-- **Backend Architecture** - Java Spring Boot for the gateway, Python FastAPI for AI processing
-- **Infrastructure** - Docker containers, Kubernetes orchestration, Redis caching
-- **AI/ML** - LangChain framework, multiple AI providers, prompt engineering
-- **Monitoring** - Prometheus metrics, distributed tracing, proper logging
-
-The code isn't perfect - there are definitely some areas I'd refactor if I were starting over, and I went through several iterations before landing on the current architecture. But that's part of the learning process!
-
----
-
 ## 📋 Billing System Demonstration
 
 > 💡 **Portfolio Demo**: The following subscription tiers demonstrate a complete billing system implementation with Stripe integration
 
-| Tier | Demo Price | Usage Limits | AI Models | Technical Features |
-|------|------------|--------------|-----------|-------------------|
-| **Free Tier** | Demo: Free | 5 requests | GPT-3.5 | Rate limiting, quota management |
-| **Pro Tier** | Demo: $9.99/month | 100 requests | GPT-3.5, GPT-4 | Advanced features, batch processing |
-| **Team Tier** | Demo: Team pricing | 500 requests | All models | RBAC, team management, analytics |
-| **Enterprise** | Demo: Custom | Unlimited | All + custom | Advanced integrations, custom deployment |
+| Tier           | Demo Price         | Usage Limits | AI Models      | Technical Features                       |
+| -------------- | ------------------ | ------------ | -------------- | ---------------------------------------- |
+| **Free Tier**  | Demo: Free         | 5 requests   | GPT-3.5        | Rate limiting, quota management          |
+| **Pro Tier**   | Demo: $9.99/month  | 100 requests | GPT-3.5, GPT-4 | Advanced features, batch processing      |
+| **Team Tier**  | Demo: Team pricing | 500 requests | All models     | RBAC, team management, analytics         |
+| **Enterprise** | Demo: Custom       | Unlimited    | All + custom   | Advanced integrations, custom deployment |
 
 **Tech Stack**: Stripe API, PostgreSQL billing tables, Redis rate limiting, JWT-based plan enforcement
 
@@ -324,12 +338,14 @@ The code isn't perfect - there are definitely some areas I'd refactor if I were 
 > 💡 **Portfolio Evolution**: Potential enhancements to further demonstrate technical capabilities
 
 ### Advanced AI Integration Concepts
+
 - **Custom Model Fine-tuning** - MLOps pipeline with model versioning
-- **Reinforcement Learning** - Success prediction based on application outcomes
+- **Reinforcement Learning** - Success prediction based on document generation outcomes
 - **A/B Testing Framework** - Systematic experimentation platform
 - **API Integration Hub** - Third-party service integration patterns
 
 ### Mobile & Extended Architecture
+
 - **React Native Apps** - Cross-platform mobile development showcase
 - **GraphQL Federation** - Advanced API gateway patterns
 - **Event Sourcing** - Complete CQRS implementation
@@ -340,11 +356,13 @@ The code isn't perfect - there are definitely some areas I'd refactor if I were 
 ## 📞 Get In Touch
 
 ### 👨‍💻 About Me
+
 - **Name**: Yifeng Yu
 - **GitHub**: [@xiaojiou176](https://github.com/xiaojiou176)
 - **This Project**: A personal learning exercise I'm proud to share
 
 ### 📋 Project Status
+
 - **Started**: As a weekend learning project
 - **Current Status**: Functional but still learning and improving
 - **Open Source**: Recently decided to make it public for portfolio purposes
