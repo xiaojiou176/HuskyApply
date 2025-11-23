@@ -5,6 +5,7 @@ public class JobCreationRequest {
   private String resumeUri;
   private String modelProvider = "openai";
   private String modelName;
+  private Boolean urgent;
 
   public JobCreationRequest() {}
 
@@ -38,5 +39,13 @@ public class JobCreationRequest {
 
   public void setModelName(String modelName) {
     this.modelName = modelName;
+  }
+
+  public Boolean getUrgent() {
+    return urgent;
+  }
+
+  public void setUrgent(Boolean urgent) {
+    this.urgent = urgent;
   }
 }

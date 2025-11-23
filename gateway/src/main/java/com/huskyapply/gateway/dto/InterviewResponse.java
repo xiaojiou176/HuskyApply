@@ -6,7 +6,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Response DTO for interview information. Contains comprehensive interview details including preparation notes, outcomes, and follow-up requirements.
+ * Response DTO for interview information. Contains comprehensive interview details including
+ * preparation notes, outcomes, and follow-up requirements.
  */
 public class InterviewResponse {
 
@@ -328,12 +329,21 @@ public class InterviewResponse {
   @Override
   public String toString() {
     return "InterviewResponse{"
-        + "interviewId=" + interviewId
-        + ", interviewType='" + interviewType + '\''
-        + ", interviewRound=" + interviewRound
-        + ", scheduledAt=" + scheduledAt
-        + ", status='" + status + '\''
-        + ", interviewerName='" + interviewerName + '\''
+        + "interviewId="
+        + interviewId
+        + ", interviewType='"
+        + interviewType
+        + '\''
+        + ", interviewRound="
+        + interviewRound
+        + ", scheduledAt="
+        + scheduledAt
+        + ", status='"
+        + status
+        + '\''
+        + ", interviewerName='"
+        + interviewerName
+        + '\''
         + '}';
   }
 }

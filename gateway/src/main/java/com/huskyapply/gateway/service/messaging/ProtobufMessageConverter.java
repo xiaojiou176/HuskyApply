@@ -76,8 +76,7 @@ public class ProtobufMessageConverter extends AbstractMessageConverter {
       MessageProperties properties = message.getMessageProperties();
 
       // Check if message is compressed
-      String compressionAlgorithm =
-          (String) properties.getHeaders().get(COMPRESSION_HEADER);
+      String compressionAlgorithm = (String) properties.getHeaders().get(COMPRESSION_HEADER);
       if (compressionAlgorithm != null) {
         CompressionAlgorithm algorithm = CompressionAlgorithm.valueOf(compressionAlgorithm);
         bytes = compressionService.decompress(bytes, algorithm);
@@ -99,8 +98,8 @@ public class ProtobufMessageConverter extends AbstractMessageConverter {
   }
 
   /**
-   * Serialize object to bytes. Currently uses JSON fallback since protobuf requires
-   * pre-compiled message classes.
+   * Serialize object to bytes. Currently uses JSON fallback since protobuf requires pre-compiled
+   * message classes.
    */
   private byte[] serializeObject(Object object) throws IOException {
     if (object == null) {
@@ -115,8 +114,8 @@ public class ProtobufMessageConverter extends AbstractMessageConverter {
   }
 
   /**
-   * Deserialize bytes to object. Currently uses JSON fallback since protobuf requires
-   * pre-compiled message classes.
+   * Deserialize bytes to object. Currently uses JSON fallback since protobuf requires pre-compiled
+   * message classes.
    */
   private Object deserializeObject(byte[] bytes, MessageProperties properties) throws IOException {
     if (bytes.length == 0) {
@@ -136,29 +135,29 @@ public class ProtobufMessageConverter extends AbstractMessageConverter {
   }
 
   /**
-   * Simple JSON serialization fallback. In production, this would use a proper JSON
-   * library like Jackson or Gson.
+   * Simple JSON serialization fallback. In production, this would use a proper JSON library like
+   * Jackson or Gson.
    */
   private String convertObjectToJson(Object object) {
     // Simplified JSON conversion for basic objects
     if (object instanceof String) {
       return "\"" + object + "\"";
     }
-    
+
     // For complex objects, this would use Jackson ObjectMapper
     return object.toString();
   }
 
   /**
-   * Simple JSON deserialization fallback. In production, this would use a proper JSON
-   * library like Jackson or Gson.
+   * Simple JSON deserialization fallback. In production, this would use a proper JSON library like
+   * Jackson or Gson.
    */
   private Object convertJsonToObject(String json) {
     // Simplified JSON parsing for basic strings
     if (json.startsWith("\"") && json.endsWith("\"")) {
       return json.substring(1, json.length() - 1);
     }
-    
+
     // For complex objects, this would use Jackson ObjectMapper
     return json;
   }

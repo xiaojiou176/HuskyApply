@@ -12,12 +12,10 @@ import com.huskyapply.gateway.model.User;
 import com.huskyapply.gateway.repository.ArtifactRepository;
 import com.huskyapply.gateway.repository.JobRepository;
 import com.huskyapply.gateway.service.messaging.MessageBatchingService;
-// import com.huskyapply.grpc.jobprocessing.v1.JobSubmissionResponse;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -37,7 +35,7 @@ public class JobService {
   @Value("${rabbitmq.routing.key:job.processing}")
   private String routingKey;
 
-  @Value("${grpc.enabled:false}") // Temporarily disabled for RabbitMQ focus  
+  @Value("${grpc.enabled:false}") // Temporarily disabled for RabbitMQ focus
   private boolean grpcEnabled;
 
   @Value("${rabbitmq.fallback.enabled:true}")
@@ -64,7 +62,7 @@ public class JobService {
       RabbitTemplate rabbitTemplate,
       SubscriptionService subscriptionService,
       MessageBatchingService batchingService) {
-      // JobProcessingClient grpcClient) { // Temporarily disabled
+    // JobProcessingClient grpcClient) { // Temporarily disabled
     this.jobRepository = jobRepository;
     this.artifactRepository = artifactRepository;
     this.rabbitTemplate = rabbitTemplate;
@@ -103,7 +101,8 @@ public class JobService {
     boolean submissionSuccessful = false;
 
     if (grpcEnabled) {
-      // submissionSuccessful = submitJobViaGrpc(createdJob, request, user, traceId); // Temporarily disabled
+      // submissionSuccessful = submitJobViaGrpc(createdJob, request, user, traceId);
+      // // Temporarily disabled
       logger.info("gRPC is disabled, skipping gRPC submission for job {}", createdJob.getId());
     }
 
@@ -128,62 +127,69 @@ public class JobService {
   }
 
   /*
-  // Temporarily commented out gRPC method 
-  private boolean submitJobViaGrpc(Job job, JobCreationRequest request, User user, String traceId) {
-    try {
-      logger.info("Submitting job {} via gRPC to Brain service", job.getId());
-
-      // Submit job asynchronously via gRPC
-      CompletableFuture<JobSubmissionResponse> responseFuture =
-          grpcClient.submitJob(
-              job,
-              user,
-              request.getModelProvider() != null ? request.getModelProvider() : "openai",
-              request.getModelName() != null ? request.getModelName() : "gpt-4o",
-              traceId);
-
-      // Handle response asynchronously to avoid blocking
-      responseFuture.whenComplete(
-          (response, throwable) -> {
-            if (throwable != null) {
-              logger.error(
-                  "gRPC job submission failed for job {}: {}", job.getId(), throwable.getMessage());
-              // Could trigger fallback mechanism here if needed
-            } else {
-              logger.info(
-                  "gRPC job submission successful for job {}: status={}, queue_position={}",
-                  job.getId(),
-                  response.getStatus(),
-                  response.getQueuePosition());
-
-              // Update job with estimated completion time if provided
-              if (response.getEstimatedCompletionMs() > 0) {
-                try {
-                  job.setStatus("QUEUED"); // Update to more specific status
-                  jobRepository.save(job);
-                } catch (Exception e) {
-                  logger.warn(
-                      "Failed to update job status after gRPC submission: {}", e.getMessage());
-                }
-              }
-            }
-          });
-
-      logger.debug("gRPC job submission initiated successfully for job {}", job.getId());
-      return true;
-
-    } catch (Exception e) {
-      logger.error("Failed to submit job {} via gRPC: {}", job.getId(), e.getMessage(), e);
-      return false;
-    }
-  }
-
-  /**
+   * // Temporarily commented out gRPC method
+   * private boolean submitJobViaGrpc(Job job, JobCreationRequest request, User
+   * user, String traceId) {
+   * try {
+   * logger.info("Submitting job {} via gRPC to Brain service", job.getId());
+   *
+   * // Submit job asynchronously via gRPC
+   * CompletableFuture<JobSubmissionResponse> responseFuture =
+   * grpcClient.submitJob(
+   * job,
+   * user,
+   * request.getModelProvider() != null ? request.getModelProvider() : "openai",
+   * request.getModelName() != null ? request.getModelName() : "gpt-4o",
+   * traceId);
+   *
+   * // Handle response asynchronously to avoid blocking
+   * responseFuture.whenComplete(
+   * (response, throwable) -> {
+   * if (throwable != null) {
+   * logger.error(
+   * "gRPC job submission failed for job {}: {}", job.getId(),
+   * throwable.getMessage());
+   * // Could trigger fallback mechanism here if needed
+   * } else {
+   * logger.info(
+   * "gRPC job submission successful for job {}: status={}, queue_position={}",
+   * job.getId(),
+   * response.getStatus(),
+   * response.getQueuePosition());
+   *
+   * // Update job with estimated completion time if provided
+   * if (response.getEstimatedCompletionMs() > 0) {
+   * try {
+   * job.setStatus("QUEUED"); // Update to more specific status
+   * jobRepository.save(job);
+   * } catch (Exception e) {
+   * logger.warn(
+   * "Failed to update job status after gRPC submission: {}", e.getMessage());
+   * }
+   * }
+   * }
+   * });
+   *
+   * logger.debug("gRPC job submission initiated successfully for job {}",
+   * job.getId());
+   * return true;
+   *
+   * } catch (Exception e) {
+   * logger.error("Failed to submit job {} via gRPC: {}", job.getId(),
+   * e.getMessage(), e);
+   * return false;
+   * }
+   * }
+   *
+   * /**
    * Submit job via RabbitMQ using the traditional message queue approach.
    *
    * @param job The created job entity
+   *
    * @param request Original job creation request
+   *
    * @param user User who created the job
+   *
    * @param traceId Distributed tracing ID
    */
   private void submitJobViaRabbitMQ(
@@ -242,8 +248,8 @@ public class JobService {
         dashboardService.evictUserJobsCache(job.getUser().getId().toString());
 
         // Evict multi-layer caches
-        multiLayerCache.evict("jobs-metadata", jobId.toString());
-        multiLayerCache.evict("dashboard-stats", job.getUser().getId().toString());
+        multiLayerCache.evict("jobs-metadata:" + jobId.toString());
+        multiLayerCache.evict("dashboard-stats:" + job.getUser().getId().toString());
 
         logger.debug(
             "Evicted all cache layers for user {} and job {} due to status change",
@@ -292,12 +298,11 @@ public class JobService {
     logger.info("Retrieving artifact for job {}", jobId);
 
     // Use multi-layer cache with intelligent fallback
-    Optional<ArtifactResponse> cachedResult =
+    ArtifactResponse cachedResult =
         multiLayerCache.get(
-            "jobs-metadata",
-            jobId.toString(),
+            "jobs-metadata:" + jobId.toString(),
             ArtifactResponse.class,
-            () -> {
+            key -> {
               // Cache miss - fetch from database
               Optional<Artifact> artifactOptional = artifactRepository.findByJobId(jobId);
 
@@ -318,12 +323,12 @@ public class JobService {
                   artifact.getCreatedAt());
             });
 
-    if (cachedResult.isEmpty()) {
+    if (cachedResult == null) {
       logger.warn("No artifact found for job ID: {}", jobId);
       throw new ArtifactNotFoundException(jobId);
     }
 
-    return cachedResult.get();
+    return cachedResult;
   }
 
   /**

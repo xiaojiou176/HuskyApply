@@ -5,7 +5,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Response DTO for job contact information. Contains comprehensive contact details and interaction history.
+ * Response DTO for job contact information. Contains comprehensive contact details and interaction
+ * history.
  */
 public class JobContactResponse {
 
@@ -250,11 +251,19 @@ public class JobContactResponse {
   @Override
   public String toString() {
     return "JobContactResponse{"
-        + "contactId=" + contactId
-        + ", contactName='" + contactName + '\''
-        + ", contactEmail='" + contactEmail + '\''
-        + ", relationshipType='" + relationshipType + '\''
-        + ", isPrimaryContact=" + isPrimaryContact
+        + "contactId="
+        + contactId
+        + ", contactName='"
+        + contactName
+        + '\''
+        + ", contactEmail='"
+        + contactEmail
+        + '\''
+        + ", relationshipType='"
+        + relationshipType
+        + '\''
+        + ", isPrimaryContact="
+        + isPrimaryContact
         + '}';
   }
 }

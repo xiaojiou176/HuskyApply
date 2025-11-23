@@ -1,6 +1,9 @@
 package com.huskyapply.gateway.config;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.huskyapply.gateway.service.CacheEventListener;
+import com.huskyapply.gateway.service.CacheMetricsCollector;
+import com.huskyapply.gateway.service.CacheWarmupService;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,9 +23,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import com.huskyapply.gateway.service.CacheWarmupService;
-import com.huskyapply.gateway.service.CacheMetricsCollector;
-import com.huskyapply.gateway.service.CacheEventListener;
 
 /**
  * Multi-Layer Cache Configuration for HuskyApply

@@ -2,23 +2,20 @@ package com.huskyapply.gateway.config;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
-import io.netty.handler.ssl.ApplicationProtocolConfig;
-import io.netty.handler.ssl.ApplicationProtocolNames;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SupportedCipherSuiteFilter;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.incubator.codec.http3.DefaultHttp3SettingsFrame;
 import io.netty.incubator.codec.http3.Http3;
-import io.netty.incubator.codec.http3.Http3RequestStreamInboundHandler;
 import io.netty.incubator.codec.http3.Http3ServerConnectionHandler;
 import io.netty.incubator.codec.http3.Http3SettingsFrame;
 import io.netty.incubator.codec.quic.QuicChannel;
 import io.netty.incubator.codec.quic.QuicConnectionIdGenerator;
-import io.netty.incubator.codec.quic.QuicServerCodecBuilder;
 import io.netty.incubator.codec.quic.QuicSslContext;
 import io.netty.incubator.codec.quic.QuicSslContextBuilder;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
@@ -32,7 +29,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.embedded.netty.NettyReactiveWebServerFactory;
 import org.springframework.boot.web.embedded.netty.NettyServerCustomizer;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import reactor.netty.http.server.HttpServer;
 
@@ -40,8 +36,8 @@ import reactor.netty.http.server.HttpServer;
  * HTTP/3 and QUIC configuration for the Gateway service. Provides enhanced network performance with
  * multiplexing, 0-RTT connection establishment, and improved mobile network support.
  */
-@Configuration
-@Profile("!test") // Don't enable HTTP/3 in test environment
+// @Configuration
+// @Profile("!test") // Don't enable HTTP/3 in test environment
 public class Http3Config {
 
   private static final Logger logger = LoggerFactory.getLogger(Http3Config.class);
@@ -124,32 +120,24 @@ public class Http3Config {
   /** Create QUIC SSL context with optimized cipher suites and protocol configuration. */
   @Bean
   public QuicSslContext quicSslContext() throws CertificateException, SSLException {
-    SslContextBuilder sslContextBuilder;
+    QuicSslContextBuilder sslContextBuilder;
 
     // Use provided certificates or generate self-signed for development
     if (sslCertificate != null && !sslCertificate.isEmpty()) {
       logger.info("Using provided SSL certificates for QUIC");
-      sslContextBuilder = SslContextBuilder.forServer(sslCertificate, sslCertificatePrivateKey);
+      sslContextBuilder =
+          QuicSslContextBuilder.forServer(
+              new java.io.File(sslCertificate), null, new java.io.File(sslCertificatePrivateKey));
     } else {
       logger.warn(
           "No SSL certificates provided, generating self-signed certificate for development");
       SelfSignedCertificate cert = new SelfSignedCertificate("localhost");
-      sslContextBuilder = SslContextBuilder.forServer(cert.certificate(), cert.privateKey());
+      sslContextBuilder =
+          QuicSslContextBuilder.forServer(cert.privateKey(), null, cert.certificate());
     }
 
-    // Configure application protocols for HTTP/3
-    sslContextBuilder
-        .applicationProtocolConfig(
-            new ApplicationProtocolConfig(
-                ApplicationProtocolConfig.Protocol.ALPN,
-                ApplicationProtocolConfig.SelectorFailureBehavior.NO_ADVERTISE,
-                ApplicationProtocolConfig.SelectedListenerFailureBehavior.ACCEPT,
-                ApplicationProtocolNames.HTTP_2,
-                ApplicationProtocolNames.HTTP_1_1))
-        .ciphers(Http3.supportedCipherSuites(), SupportedCipherSuiteFilter.INSTANCE);
-
     // Build QUIC SSL context with HTTP/3 support
-    return QuicSslContextBuilder.forServer(sslContextBuilder.build())
+    return sslContextBuilder
         .applicationProtocols(Http3.supportedApplicationProtocols())
         .earlyData(enableEarlyData)
         .build();
@@ -161,7 +149,7 @@ public class Http3Config {
 
     // Configure QUIC server codec with performance optimizations
     pipeline.addLast(
-        QuicServerCodecBuilder.newBuilder()
+        Http3.newQuicServerCodecBuilder()
             .sslContext(sslContext)
             .maxIdleTimeout(idleTimeout.toMillis(), TimeUnit.MILLISECONDS)
             .initialMaxData(initialMaxData)
@@ -173,7 +161,7 @@ public class Http3Config {
             .maxAckDelay(maxAckDelay.toMillis(), TimeUnit.MILLISECONDS)
             .activeMigration(true) // Enable connection migration for mobile networks
             .congestionControlAlgorithm(getCongestionControlAlgorithm())
-            .tokenHandler(QuicTokenHandler.newReusableTokenHandler()) // Enable 0-RTT
+            .tokenHandler(new QuicTokenHandlerImpl()) // Enable 0-RTT
             .connectionIdAddressGenerator(QuicConnectionIdGenerator.randomGenerator())
             .streamHandler(
                 new ChannelInitializer<QuicStreamChannel>() {
@@ -208,12 +196,10 @@ public class Http3Config {
                 configureHttp3StreamPipeline(ch.pipeline());
               }
             },
+            null,
+            null,
             // HTTP/3 settings for performance optimization
-            Http3SettingsFrame.newBuilder()
-                .maxFieldSectionSize(8192) // 8KB header limit
-                .qpackMaxTableCapacity(4096) // QPACK compression
-                .qpackBlockedStreams(100)
-                .build(),
+            createHttp3Settings(),
             // Enable server push for critical resources
             true));
   }
@@ -222,20 +208,16 @@ public class Http3Config {
   private void configureHttp3StreamPipeline(ChannelPipeline pipeline) {
     // Add HTTP/3 request stream handler
     pipeline.addLast(
-        new Http3RequestStreamInboundHandler() {
+        new ChannelInboundHandlerAdapter() {
           @Override
-          protected void channelRead(ChannelHandlerContext ctx, Object msg) {
+          public void channelRead(ChannelHandlerContext ctx, Object msg) {
             // Custom request handling with performance optimizations
             if (msg instanceof ByteBuf) {
               ByteBuf buffer = (ByteBuf) msg;
-              try {
-                // Process HTTP/3 request with zero-copy optimizations
-                processHttp3Request(ctx, buffer);
-              } finally {
-                buffer.release(); // Always release buffers to prevent memory leaks
-              }
+              processHttp3Request(ctx, buffer);
             }
-            super.channelRead(ctx, msg);
+            // Pass to next handler
+            ctx.fireChannelRead(msg);
           }
         });
 
@@ -274,94 +256,80 @@ public class Http3Config {
         return io.netty.incubator.codec.quic.QuicCongestionControlAlgorithm.BBR;
       default:
         logger.warn(
-            "Unknown congestion control algorithm '{}', using CUBIC", congestionControlAlgorithm);
-        return io.netty.incubator.codec.quic.QuicCongestionControlAlgorithm.CUBIC;
+            "Unknown congestion control algorithm: {}, defaulting to RENO",
+            congestionControlAlgorithm);
+        return io.netty.incubator.codec.quic.QuicCongestionControlAlgorithm.RENO;
     }
   }
 
   /** Custom token handler for 0-RTT connection establishment. */
-  private static class QuicTokenHandler implements io.netty.incubator.codec.quic.QuicTokenHandler {
-    private static final QuicTokenHandler INSTANCE = new QuicTokenHandler();
-
-    public static QuicTokenHandler newReusableTokenHandler() {
-      return INSTANCE;
-    }
+  private static final class QuicTokenHandlerImpl
+      implements io.netty.incubator.codec.quic.QuicTokenHandler {
+    private static final QuicTokenHandlerImpl INSTANCE = new QuicTokenHandlerImpl();
 
     @Override
-    public boolean writeToken(ByteBuf out, ByteBuf dcid, java.net.InetSocketAddress remoteAddress) {
-      // Generate and write token for 0-RTT
-      out.writeLong(System.currentTimeMillis()); // Simple timestamp-based token
-      out.writeBytes(dcid, dcid.readerIndex(), Math.min(dcid.readableBytes(), 8));
+    public boolean writeToken(ByteBuf out, ByteBuf dcid, java.net.InetSocketAddress address) {
+      // Simple token generation for development
+      out.writeLong(System.currentTimeMillis());
       return true;
     }
 
     @Override
-    public int validateToken(ByteBuf token, java.net.InetSocketAddress remoteAddress) {
+    public int validateToken(ByteBuf token, java.net.InetSocketAddress address) {
       if (token.readableBytes() < 8) {
-        return -1; // Invalid token
+        return -1;
       }
-
       long timestamp = token.readLong();
-      long now = System.currentTimeMillis();
-
-      // Token is valid for 24 hours
-      if (now - timestamp > TimeUnit.HOURS.toMillis(24)) {
-        return -1; // Token expired
+      // Token valid for 24 hours
+      if (System.currentTimeMillis() - timestamp > 86400000) {
+        return -1;
       }
-
-      return 0; // Token valid
+      return 0;
     }
 
     @Override
     public int maxTokenLength() {
-      return 64; // Maximum token size
+      return 8;
     }
   }
 
   /** Performance monitoring handler for HTTP/3 streams. */
-  private static class Http3PerformanceHandler
-      extends io.netty.channel.ChannelInboundHandlerAdapter {
+  private static class Http3PerformanceHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-      logger.debug("HTTP/3 stream activated: {}", ctx.channel());
       super.channelActive(ctx);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-      logger.debug("HTTP/3 stream closed: {}", ctx.channel());
       super.channelInactive(ctx);
     }
   }
 
   /** Compression handler for HTTP/3 responses. */
-  private static class Http3CompressionHandler
-      extends io.netty.channel.ChannelOutboundHandlerAdapter {
+  private static class Http3CompressionHandler extends ChannelOutboundHandlerAdapter {
     @Override
     public void write(
         ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise)
         throws Exception {
-      // Apply compression to outbound messages if beneficial
       if (msg instanceof ByteBuf) {
         ByteBuf buffer = (ByteBuf) msg;
-        if (buffer.readableBytes() > 1024) { // Only compress larger payloads
-          // Apply QPACK or gzip compression
-          logger.debug("Applying compression to {} byte response", buffer.readableBytes());
-        }
+        // Simple pass-through for now, real compression would be more complex
+        ctx.write(buffer, promise);
+      } else {
+        ctx.write(msg, promise);
       }
-      super.write(ctx, msg, promise);
     }
   }
 
-  /** Configuration properties for HTTP/3 optimization. */
+  /** Configuration properties for HTTP/3. */
   public static class Http3Properties {
     private boolean enabled = true;
     private int port = 8443;
-    private Duration idleTimeout = Duration.ofSeconds(30);
+    private Duration idleTimeout = Duration.ofSeconds(300);
     private int maxConcurrentStreams = 100;
     private boolean enableEarlyData = true;
-    private boolean enableServerPush = true;
-    private String congestionControl = "cubic";
+    private String congestionControl = "reno";
 
     // Getters and setters
     public boolean isEnabled() {
@@ -404,14 +372,6 @@ public class Http3Config {
       this.enableEarlyData = enableEarlyData;
     }
 
-    public boolean isEnableServerPush() {
-      return enableServerPush;
-    }
-
-    public void setEnableServerPush(boolean enableServerPush) {
-      this.enableServerPush = enableServerPush;
-    }
-
     public String getCongestionControl() {
       return congestionControl;
     }
@@ -419,5 +379,13 @@ public class Http3Config {
     public void setCongestionControl(String congestionControl) {
       this.congestionControl = congestionControl;
     }
+  }
+
+  private Http3SettingsFrame createHttp3Settings() {
+    DefaultHttp3SettingsFrame settings = new DefaultHttp3SettingsFrame();
+    settings.put(Http3SettingsFrame.HTTP3_SETTINGS_MAX_FIELD_SECTION_SIZE, 8192L);
+    settings.put(Http3SettingsFrame.HTTP3_SETTINGS_QPACK_MAX_TABLE_CAPACITY, 4096L);
+    settings.put(Http3SettingsFrame.HTTP3_SETTINGS_QPACK_BLOCKED_STREAMS, 100L);
+    return settings;
   }
 }

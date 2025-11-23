@@ -1,70 +1,86 @@
 package com.huskyapply.gateway.model;
 
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.relational.core.mapping.Column;
-import org.springframework.data.relational.core.mapping.Table;
 
-@Table("jobs")
+@Entity
+@jakarta.persistence.Table(name = "jobs")
 public class Job {
 
-  @Id private UUID id;
+  @Id
+  @jakarta.persistence.Column(name = "id")
+  private UUID id;
 
-  @Column("jd_url")
+  @jakarta.persistence.Column(name = "jd_url")
   private String jdUrl;
 
-  @Column("resume_uri")
+  @jakarta.persistence.Column(name = "resume_uri")
   private String resumeUri;
 
-  @Column("status")
+  @jakarta.persistence.Column(name = "status")
   private String status;
 
-  @Column("user_id")
+  @jakarta.persistence.Column(name = "user_id")
   private UUID userId;
 
-  @Column("job_title")
+  @jakarta.persistence.ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)
+  @jakarta.persistence.JoinColumn(name = "user_id", insertable = false, updatable = false)
+  private User user;
+
+  @jakarta.persistence.Column(name = "job_title")
   private String jobTitle;
 
-  @Column("company_name")
+  @jakarta.persistence.Column(name = "company_name")
   private String companyName;
 
-  @Column("created_at")
+  @jakarta.persistence.Column(name = "created_at")
   private Instant createdAt;
 
-  @Column("batch_job_id")
+  @jakarta.persistence.Column(name = "batch_job_id")
   private UUID batchJobId;
 
+  @jakarta.persistence.ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)
+  @jakarta.persistence.JoinColumn(name = "batch_job_id", insertable = false, updatable = false)
+  private BatchJob batchJob;
+
+  @jakarta.persistence.OneToMany(
+      mappedBy = "job",
+      fetch = jakarta.persistence.FetchType.LAZY,
+      cascade = jakarta.persistence.CascadeType.ALL)
+  private java.util.List<Artifact> artifacts;
+
   // Job tracking fields (added for tracking functionality)
-  @Column("job_description")
+  @jakarta.persistence.Column(name = "job_description")
   private String jobDescription;
 
-  @Column("application_deadline")
+  @jakarta.persistence.Column(name = "application_deadline")
   private Instant applicationDeadline;
 
-  @Column("expected_salary_min")
+  @jakarta.persistence.Column(name = "expected_salary_min")
   private Integer expectedSalaryMin;
 
-  @Column("expected_salary_max")
+  @jakarta.persistence.Column(name = "expected_salary_max")
   private Integer expectedSalaryMax;
 
-  @Column("job_location")
+  @jakarta.persistence.Column(name = "job_location")
   private String jobLocation;
 
-  @Column("application_method")
+  @jakarta.persistence.Column(name = "application_method")
   private String applicationMethod;
 
-  @Column("referral_contact")
+  @jakarta.persistence.Column(name = "referral_contact")
   private String referralContact;
 
-  @Column("job_priority")
+  @jakarta.persistence.Column(name = "job_priority")
   private String jobPriority;
 
-  @Column("notes")
+  @jakarta.persistence.Column(name = "notes")
   private String notes;
 
-  @Column("last_updated_at")
+  @jakarta.persistence.Column(name = "last_updated_at")
   private Instant lastUpdatedAt;
 
   public Job() {}
@@ -132,6 +148,17 @@ public class Job {
     this.userId = userId;
   }
 
+  public User getUser() {
+    return user;
+  }
+
+  public void setUser(User user) {
+    this.user = user;
+    if (user != null) {
+      this.userId = user.getId();
+    }
+  }
+
   public String getJobTitle() {
     return jobTitle;
   }
@@ -162,6 +189,25 @@ public class Job {
 
   public void setBatchJobId(UUID batchJobId) {
     this.batchJobId = batchJobId;
+  }
+
+  public BatchJob getBatchJob() {
+    return batchJob;
+  }
+
+  public void setBatchJob(BatchJob batchJob) {
+    this.batchJob = batchJob;
+    if (batchJob != null) {
+      this.batchJobId = batchJob.getId();
+    }
+  }
+
+  public java.util.List<Artifact> getArtifacts() {
+    return artifacts;
+  }
+
+  public void setArtifacts(java.util.List<Artifact> artifacts) {
+    this.artifacts = artifacts;
   }
 
   // Getters and Setters for Job Tracking fields
@@ -290,6 +336,11 @@ public class Job {
 
     public JobBuilder userId(UUID userId) {
       this.userId = userId;
+      return this;
+    }
+
+    public JobBuilder user(User user) {
+      this.userId = user.getId();
       return this;
     }
 

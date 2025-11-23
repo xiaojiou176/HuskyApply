@@ -1,44 +1,52 @@
 package com.huskyapply.gateway.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.relational.core.mapping.Column;
-import org.springframework.data.relational.core.mapping.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
-@Table("artifacts")
+@Entity
+@Table(name = "artifacts")
 public class Artifact {
 
-  @Id private UUID id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.AUTO)
+  private UUID id;
 
-  @Column("job_id")
+  @Column(name = "job_id", insertable = false, updatable = false)
   private UUID jobId;
 
-  @Column("content_type")
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "job_id", nullable = false)
+  private Job job;
+
+  @Column(name = "content_type")
   private String contentType;
 
-  @Column("generated_text")
+  @Column(name = "generated_text", columnDefinition = "TEXT")
   private String generatedText;
 
-  @Column("word_count")
+  @Column(name = "word_count")
   private Integer wordCount;
 
-  @Column("extracted_skills")
+  @Column(name = "extracted_skills", columnDefinition = "jsonb")
+  @JdbcTypeCode(SqlTypes.JSON)
   private JsonNode extractedSkills;
 
-  @Column("created_at")
+  @Column(name = "created_at")
   private Instant createdAt;
 
-  @Column("updated_at")
+  @Column(name = "updated_at")
   private Instant updatedAt;
 
   public Artifact() {}
 
   public Artifact(
       UUID id,
-      UUID jobId,
+      Job job,
       String contentType,
       String generatedText,
       Integer wordCount,
@@ -46,13 +54,25 @@ public class Artifact {
       Instant createdAt,
       Instant updatedAt) {
     this.id = id;
-    this.jobId = jobId;
+    this.job = job;
+    this.jobId = job != null ? job.getId() : null;
     this.contentType = contentType;
     this.generatedText = generatedText;
     this.wordCount = wordCount;
     this.extractedSkills = extractedSkills;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
+  }
+
+  @PrePersist
+  protected void onCreate() {
+    createdAt = Instant.now();
+    updatedAt = Instant.now();
+  }
+
+  @PreUpdate
+  protected void onUpdate() {
+    updatedAt = Instant.now();
   }
 
   public static ArtifactBuilder builder() {
@@ -72,8 +92,15 @@ public class Artifact {
     return jobId;
   }
 
-  public void setJobId(UUID jobId) {
-    this.jobId = jobId;
+  public Job getJob() {
+    return job;
+  }
+
+  public void setJob(Job job) {
+    this.job = job;
+    if (job != null) {
+      this.jobId = job.getId();
+    }
   }
 
   public String getContentType() {
@@ -139,7 +166,7 @@ public class Artifact {
 
   public static class ArtifactBuilder {
     private UUID id;
-    private UUID jobId;
+    private Job job;
     private String contentType;
     private String generatedText;
     private Integer wordCount;
@@ -152,8 +179,8 @@ public class Artifact {
       return this;
     }
 
-    public ArtifactBuilder jobId(UUID jobId) {
-      this.jobId = jobId;
+    public ArtifactBuilder job(Job job) {
+      this.job = job;
       return this;
     }
 
@@ -189,7 +216,7 @@ public class Artifact {
 
     public Artifact build() {
       return new Artifact(
-          id, jobId, contentType, generatedText, wordCount, extractedSkills, createdAt, updatedAt);
+          id, job, contentType, generatedText, wordCount, extractedSkills, createdAt, updatedAt);
     }
   }
 }

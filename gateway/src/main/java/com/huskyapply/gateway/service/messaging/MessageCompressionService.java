@@ -257,7 +257,7 @@ public class MessageCompressionService {
             | (compressedData[3] & 0xFF);
 
     byte[] decompressed = new byte[originalSize];
-    lz4Decompressor.decompress(compressedData, 4, decompressed, 0, originalSize);
+    lz4Decompressor.decompress(compressedData, 4, compressedData.length - 4, decompressed, 0);
     return decompressed;
   }
 

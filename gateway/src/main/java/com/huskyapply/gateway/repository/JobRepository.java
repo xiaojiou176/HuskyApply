@@ -2,118 +2,147 @@ package com.huskyapply.gateway.repository;
 
 import com.huskyapply.gateway.model.Job;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.r2dbc.repository.Query;
-import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 @Repository
-public interface JobRepository extends ReactiveCrudRepository<Job, UUID> {
+public interface JobRepository extends JpaRepository<Job, UUID> {
 
   /** Find all jobs for a specific user ordered by creation date. */
-  Flux<Job> findByUserIdOrderByCreatedAtDesc(UUID userId);
+  List<Job> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
   /** Find jobs by user with pagination. */
-  Flux<Job> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
+  List<Job> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
   /** Find jobs by user and status. */
-  Flux<Job> findByUserIdAndStatusOrderByCreatedAtDesc(UUID userId, String status);
+  List<Job> findByUserIdAndStatusOrderByCreatedAtDesc(UUID userId, String status);
 
   /** Find recent jobs for a user (limit by count). */
-  @Query("SELECT * FROM jobs WHERE user_id = :userId ORDER BY created_at DESC LIMIT 10")
-  Flux<Job> findTop10ByUserIdOrderByCreatedAtDesc(UUID userId);
+  @Query(
+      value = "SELECT * FROM jobs WHERE user_id = :userId ORDER BY created_at DESC LIMIT 10",
+      nativeQuery = true)
+  List<Job> findTop10ByUserIdOrderByCreatedAtDesc(@Param("userId") UUID userId);
 
   /** Find jobs created within a time period. */
-  Flux<Job> findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(UUID userId, Instant after);
+  List<Job> findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(UUID userId, Instant after);
 
   /** Count jobs by user. */
-  Mono<Long> countByUserId(UUID userId);
+  long countByUserId(UUID userId);
 
   /** Count jobs by user and status. */
-  Mono<Long> countByUserIdAndStatus(UUID userId, String status);
+  long countByUserIdAndStatus(UUID userId, String status);
 
   /** Count jobs created within a time period. */
-  Mono<Long> countByUserIdAndCreatedAtAfter(UUID userId, Instant after);
+  long countByUserIdAndCreatedAtAfter(UUID userId, Instant after);
 
   /** Get user job statistics - OPTIMIZED using materialized view. */
   @Query(
-      "SELECT "
-          + "total_jobs, completed_jobs, failed_jobs, pending_jobs, processing_jobs, "
-          + "last_job_date, jobs_this_week, jobs_this_month, jobs_this_quarter, "
-          + "avg_processing_time_seconds, unique_companies_applied "
-          + "FROM user_job_stats_mv WHERE user_id = :userId")
-  Mono<Object[]> getUserJobStatsOptimized(UUID userId);
+      value =
+          "SELECT "
+              + "total_jobs, completed_jobs, failed_jobs, pending_jobs, processing_jobs, "
+              + "last_job_date, jobs_this_week, jobs_this_month, jobs_this_quarter, "
+              + "avg_processing_time_seconds, unique_companies_applied "
+              + "FROM user_job_stats_mv WHERE user_id = :userId",
+      nativeQuery = true)
+  List<Object[]> getUserJobStatsOptimized(@Param("userId") UUID userId);
 
   /** Fallback method for getUserJobStats when materialized view is not available. */
   @Query(
-      "SELECT "
-          + "COUNT(*) as totalJobs, "
-          + "SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completedJobs, "
-          + "SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failedJobs, "
-          + "SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as pendingJobs, "
-          + "SUM(CASE WHEN status = 'PROCESSING' THEN 1 ELSE 0 END) as processingJobs, "
-          + "MAX(created_at) as lastJobDate "
-          + "FROM jobs WHERE user_id = :userId")
-  Mono<Object[]> getUserJobStats(UUID userId);
+      value =
+          "SELECT "
+              + "COUNT(*) as totalJobs, "
+              + "SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completedJobs, "
+              + "SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failedJobs, "
+              + "SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as pendingJobs, "
+              + "SUM(CASE WHEN status = 'PROCESSING' THEN 1 ELSE 0 END) as processingJobs, "
+              + "MAX(created_at) as lastJobDate "
+              + "FROM jobs WHERE user_id = :userId",
+      nativeQuery = true)
+  List<Object[]> getUserJobStats(@Param("userId") UUID userId);
 
   /** Full-text search jobs - OPTIMIZED using search vector. */
   @Query(
-      "SELECT * FROM jobs WHERE user_id = :userId AND "
-          + "search_vector @@ plainto_tsquery('english', :searchTerm) "
-          + "ORDER BY ts_rank(search_vector, plainto_tsquery('english', :searchTerm)) DESC, "
-          + "created_at DESC LIMIT :limit")
-  Flux<Job> searchByUserAndTermOptimized(UUID userId, String searchTerm, int limit);
+      value =
+          "SELECT * FROM jobs WHERE user_id = :userId AND "
+              + "search_vector @@ plainto_tsquery('english', :searchTerm) "
+              + "ORDER BY ts_rank(search_vector, plainto_tsquery('english', :searchTerm)) DESC, "
+              + "created_at DESC LIMIT :limit",
+      nativeQuery = true)
+  List<Job> searchByUserAndTermOptimized(
+      @Param("userId") UUID userId,
+      @Param("searchTerm") String searchTerm,
+      @Param("limit") int limit);
 
   /** Fallback search method using LIKE for backward compatibility. */
   @Query(
-      "SELECT * FROM jobs WHERE user_id = :userId AND "
-          + "(LOWER(company_name) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR "
-          + "LOWER(job_title) LIKE LOWER(CONCAT('%', :searchTerm, '%'))) "
-          + "ORDER BY created_at DESC")
-  Flux<Job> searchByUserAndTerm(UUID userId, String searchTerm);
+      value =
+          "SELECT * FROM jobs WHERE user_id = :userId AND "
+              + "(LOWER(company_name) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR "
+              + "LOWER(job_title) LIKE LOWER(CONCAT('%', :searchTerm, '%'))) "
+              + "ORDER BY created_at DESC",
+      nativeQuery = true)
+  List<Job> searchByUserAndTerm(
+      @Param("userId") UUID userId, @Param("searchTerm") String searchTerm);
 
   /** Find jobs for batch processing - OPTIMIZED with index. */
-  @Query("SELECT * FROM jobs WHERE batch_job_id = :batchJobId ORDER BY created_at ASC")
-  Flux<Job> findByBatchJobIdOrderByCreatedAtAsc(UUID batchJobId);
+  @Query(
+      value = "SELECT * FROM jobs WHERE batch_job_id = :batchJobId ORDER BY created_at ASC",
+      nativeQuery = true)
+  List<Job> findByBatchJobIdOrderByCreatedAtAsc(@Param("batchJobId") UUID batchJobId);
 
   /** Count active jobs for user (for quota checking) - OPTIMIZED with index. */
   @Query(
-      "SELECT COUNT(*) FROM jobs WHERE user_id = :userId AND status IN ('PENDING', 'PROCESSING')")
-  Mono<Long> countActiveJobsByUser(UUID userId);
+      value =
+          "SELECT COUNT(*) FROM jobs WHERE user_id = :userId AND status IN ('PENDING', 'PROCESSING')",
+      nativeQuery = true)
+  long countActiveJobsByUser(@Param("userId") UUID userId);
 
   /** Find recent successful jobs for portfolio display - uses covering index. */
   @Query(
-      "SELECT * FROM jobs WHERE user_id = :userId AND status = 'COMPLETED' "
-          + "ORDER BY created_at DESC")
-  Flux<Job> findRecentCompletedJobsByUser(UUID userId, Pageable pageable);
+      value =
+          "SELECT * FROM jobs WHERE user_id = :userId AND status = 'COMPLETED' "
+              + "ORDER BY created_at DESC",
+      nativeQuery = true)
+  List<Job> findRecentCompletedJobsByUser(@Param("userId") UUID userId, Pageable pageable);
 
   /** Find jobs by status and age for cleanup operations - OPTIMIZED with composite index. */
   @Query(
-      "SELECT * FROM jobs WHERE status = ANY(:statuses) AND created_at < :cutoffDate "
-          + "ORDER BY created_at ASC")
-  Flux<Job> findJobsForCleanup(String[] statuses, Instant cutoffDate);
+      value =
+          "SELECT * FROM jobs WHERE status IN (:statuses) AND created_at < :cutoffDate "
+              + "ORDER BY created_at ASC",
+      nativeQuery = true)
+  List<Job> findJobsForCleanup(
+      @Param("statuses") List<String> statuses, @Param("cutoffDate") Instant cutoffDate);
 
   /** Get daily job statistics for admin dashboard. */
   @Query(
-      "SELECT date, status, job_count, avg_processing_time_seconds, "
-          + "median_processing_time_seconds, p95_processing_time_seconds, unique_users "
-          + "FROM job_performance_metrics_mv "
-          + "WHERE date >= :fromDate ORDER BY date DESC, status")
-  Flux<Object[]> getJobPerformanceMetrics(Instant fromDate);
+      value =
+          "SELECT date, status, job_count, avg_processing_time_seconds, "
+              + "median_processing_time_seconds, p95_processing_time_seconds, unique_users "
+              + "FROM job_performance_metrics_mv "
+              + "WHERE date >= :fromDate ORDER BY date DESC, status",
+      nativeQuery = true)
+  List<Object[]> getJobPerformanceMetrics(@Param("fromDate") Instant fromDate);
 
   /** Find popular skills across all jobs. */
   @Query(
-      "SELECT skill, frequency, job_count, user_count, success_rate "
-          + "FROM popular_skills_mv "
-          + "ORDER BY frequency DESC LIMIT :limit")
-  Flux<Object[]> getPopularSkills(int limit);
+      value =
+          "SELECT skill, frequency, job_count, user_count, success_rate "
+              + "FROM popular_skills_mv "
+              + "ORDER BY frequency DESC LIMIT :limit",
+      nativeQuery = true)
+  List<Object[]> getPopularSkills(@Param("limit") int limit);
 
   /** Check if user has pending jobs (for preventing duplicate submissions). */
   @Query(
-      "SELECT CASE WHEN COUNT(*) > 0 THEN true ELSE false END FROM jobs "
-          + "WHERE user_id = :userId AND jd_url = :jdUrl AND status IN ('PENDING', 'PROCESSING')")
-  Mono<Boolean> hasUserPendingJobForUrl(UUID userId, String jdUrl);
+      value =
+          "SELECT CASE WHEN COUNT(*) > 0 THEN true ELSE false END FROM jobs "
+              + "WHERE user_id = :userId AND jd_url = :jdUrl AND status IN ('PENDING', 'PROCESSING')",
+      nativeQuery = true)
+  boolean hasUserPendingJobForUrl(@Param("userId") UUID userId, @Param("jdUrl") String jdUrl);
 }

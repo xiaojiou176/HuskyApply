@@ -9,8 +9,8 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * Represents a detailed interview entity for job applications.
- * Contains comprehensive interview information including preparation, questions, and outcomes.
+ * Represents a detailed interview entity for job applications. Contains comprehensive interview
+ * information including preparation, questions, and outcomes.
  */
 @Table("interviews")
 public class Interview {
@@ -98,7 +98,7 @@ public class Interview {
     public static final String PANEL = "PANEL";
     public static final String FINAL = "FINAL";
     public static final String HR_SCREENING = "HR_SCREENING";
-    
+
     private InterviewType() {} // Prevent instantiation
   }
 
@@ -109,7 +109,7 @@ public class Interview {
     public static final String CANCELLED = "CANCELLED";
     public static final String RESCHEDULED = "RESCHEDULED";
     public static final String NO_SHOW = "NO_SHOW";
-    
+
     private InterviewStatus() {} // Prevent instantiation
   }
 
@@ -122,7 +122,7 @@ public class Interview {
     public static final String HIRE = "HIRE";
     public static final String NO_HIRE = "NO_HIRE";
     public static final String STRONG_NO_HIRE = "STRONG_NO_HIRE";
-    
+
     private InterviewOutcome() {} // Prevent instantiation
   }
 
@@ -359,15 +359,25 @@ public class Interview {
 
   @Override
   public String toString() {
-    return "Interview{" +
-        "id=" + id +
-        ", jobId=" + jobId +
-        ", interviewType='" + interviewType + '\'' +
-        ", interviewRound=" + interviewRound +
-        ", scheduledAt=" + scheduledAt +
-        ", status='" + status + '\'' +
-        ", interviewerName='" + interviewerName + '\'' +
-        '}';
+    return "Interview{"
+        + "id="
+        + id
+        + ", jobId="
+        + jobId
+        + ", interviewType='"
+        + interviewType
+        + '\''
+        + ", interviewRound="
+        + interviewRound
+        + ", scheduledAt="
+        + scheduledAt
+        + ", status='"
+        + status
+        + '\''
+        + ", interviewerName='"
+        + interviewerName
+        + '\''
+        + '}';
   }
 
   // Builder Pattern

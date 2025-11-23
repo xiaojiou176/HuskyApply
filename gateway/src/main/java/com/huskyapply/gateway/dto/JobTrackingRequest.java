@@ -1,15 +1,15 @@
 package com.huskyapply.gateway.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.time.Instant;
-import java.util.List;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
+import java.util.List;
 
 /**
- * Request DTO for creating or updating job tracking information.
- * Includes basic job details, priority, deadlines, and application notes.
+ * Request DTO for creating or updating job tracking information. Includes basic job details,
+ * priority, deadlines, and application notes.
  */
 public class JobTrackingRequest {
 
@@ -55,10 +55,7 @@ public class JobTrackingRequest {
   public JobTrackingRequest() {}
 
   public JobTrackingRequest(
-      String jobDescription,
-      Instant applicationDeadline,
-      String jobPriority,
-      String notes) {
+      String jobDescription, Instant applicationDeadline, String jobPriority, String notes) {
     this.jobDescription = jobDescription;
     this.applicationDeadline = applicationDeadline;
     this.jobPriority = jobPriority;
@@ -157,16 +154,21 @@ public class JobTrackingRequest {
   @Override
   public String toString() {
     return "JobTrackingRequest{"
-        + "jobPriority='" + jobPriority + '\''
-        + ", applicationDeadline=" + applicationDeadline
-        + ", jobLocation='" + jobLocation + '\''
-        + ", applicationMethod='" + applicationMethod + '\''
+        + "jobPriority='"
+        + jobPriority
+        + '\''
+        + ", applicationDeadline="
+        + applicationDeadline
+        + ", jobLocation='"
+        + jobLocation
+        + '\''
+        + ", applicationMethod='"
+        + applicationMethod
+        + '\''
         + '}';
   }
 
-  /**
-   * Nested DTO for job contact information within tracking request.
-   */
+  /** Nested DTO for job contact information within tracking request. */
   public static class JobContactRequest {
 
     @JsonProperty("contact_name")
@@ -267,9 +269,7 @@ public class JobTrackingRequest {
     }
   }
 
-  /**
-   * Nested DTO for job event information within tracking request.
-   */
+  /** Nested DTO for job event information within tracking request. */
   public static class JobEventRequest {
 
     @JsonProperty("event_type")

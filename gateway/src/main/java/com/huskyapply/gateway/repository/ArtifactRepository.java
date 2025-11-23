@@ -1,19 +1,19 @@
 package com.huskyapply.gateway.repository;
 
 import com.huskyapply.gateway.model.Artifact;
+import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
-import reactor.core.publisher.Mono;
 
 @Repository
-public interface ArtifactRepository extends ReactiveCrudRepository<Artifact, UUID> {
+public interface ArtifactRepository extends JpaRepository<Artifact, UUID> {
 
   /**
    * Finds an artifact by the associated job ID.
    *
    * @param jobId the UUID of the job
-   * @return Mono containing the artifact if found, empty otherwise
+   * @return Optional containing the artifact if found, empty otherwise
    */
-  Mono<Artifact> findByJobId(UUID jobId);
+  Optional<Artifact> findByJobId(UUID jobId);
 }

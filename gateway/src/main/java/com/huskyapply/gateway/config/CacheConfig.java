@@ -148,7 +148,7 @@ public class CacheConfig implements CachingConfigurer {
     cacheConfigurations.put(
         API_RESPONSE_CACHE, defaultCacheConfig.entryTtl(Duration.ofMillis(apiResponseTtl)));
 
-    RedisCacheManager.Builder builder =
+    RedisCacheManager.RedisCacheManagerBuilder builder =
         RedisCacheManager.RedisCacheManagerBuilder.fromConnectionFactory(redisConnectionFactory)
             .cacheDefaults(defaultCacheConfig)
             .withInitialCacheConfigurations(cacheConfigurations);
@@ -335,10 +335,11 @@ public class CacheConfig implements CachingConfigurer {
    * as it requires Spring Boot Actuator dependency
    */
   // @Bean
-  // @ConditionalOnProperty(name = "cache.metrics.enabled", havingValue = "true", matchIfMissing =
+  // @ConditionalOnProperty(name = "cache.metrics.enabled", havingValue = "true",
+  // matchIfMissing =
   // true)
   // public CacheHealthIndicator cacheHealthIndicator() {
-  //   return new CacheHealthIndicator(redisTemplate(), meterRegistry);
+  // return new CacheHealthIndicator(redisTemplate(), meterRegistry);
   // }
 
   /**

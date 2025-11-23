@@ -1,19 +1,19 @@
 package com.huskyapply.gateway.repository;
 
 import com.huskyapply.gateway.model.User;
+import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
-import reactor.core.publisher.Mono;
 
 /**
  * Repository interface for User entity operations.
  *
- * <p>Provides standard CRUD operations through ReactiveCrudRepository and custom query methods for
- * user management and authentication workflows.
+ * <p>Provides standard CRUD operations through JpaRepository and custom query methods for user
+ * management and authentication workflows.
  */
 @Repository
-public interface UserRepository extends ReactiveCrudRepository<User, UUID> {
+public interface UserRepository extends JpaRepository<User, UUID> {
 
   /**
    * Finds a user by their email address.
@@ -22,7 +22,7 @@ public interface UserRepository extends ReactiveCrudRepository<User, UUID> {
    * their email (which serves as the username).
    *
    * @param email the email address to search for
-   * @return Mono containing the user if found, empty otherwise
+   * @return Optional containing the user if found, empty otherwise
    */
-  Mono<User> findByEmail(String email);
+  Optional<User> findByEmail(String email);
 }

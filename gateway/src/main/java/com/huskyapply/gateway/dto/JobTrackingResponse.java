@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Response DTO for job tracking information.
- * Contains comprehensive job details, timeline, contacts, and progress indicators.
+ * Response DTO for job tracking information. Contains comprehensive job details, timeline,
+ * contacts, and progress indicators.
  */
 public class JobTrackingResponse {
 
@@ -271,13 +271,14 @@ public class JobTrackingResponse {
     this.nextActionItems = nextActionItems;
   }
 
-  /**
-   * Progress indicators for visual dashboard display.
-   */
+  /** Progress indicators for visual dashboard display. */
   public static class ProgressIndicators {
 
     @JsonProperty("application_status")
-    private String applicationStatus; // 'NOT_APPLIED', 'APPLIED', 'UNDER_REVIEW', 'INTERVIEWING', 'OFFER', 'REJECTED'
+    private String
+        applicationStatus; // 'NOT_APPLIED', 'APPLIED', 'UNDER_REVIEW', 'INTERVIEWING', 'OFFER',
+
+    // 'REJECTED'
 
     @JsonProperty("completion_percentage")
     private Integer completionPercentage;
@@ -289,7 +290,8 @@ public class JobTrackingResponse {
     private Integer daysToDeadline;
 
     @JsonProperty("interview_progress")
-    private String interviewProgress; // 'NOT_STARTED', 'PHONE_SCREEN', 'TECHNICAL', 'FINAL', 'COMPLETED'
+    private String
+        interviewProgress; // 'NOT_STARTED', 'PHONE_SCREEN', 'TECHNICAL', 'FINAL', 'COMPLETED'
 
     @JsonProperty("has_upcoming_events")
     private Boolean hasUpcomingEvents;
@@ -366,9 +368,7 @@ public class JobTrackingResponse {
     }
   }
 
-  /**
-   * Statistical information about the job application.
-   */
+  /** Statistical information about the job application. */
   public static class JobStatistics {
 
     @JsonProperty("total_events")
@@ -472,16 +472,15 @@ public class JobTrackingResponse {
     }
   }
 
-  /**
-   * Represents a recommended action item for the user.
-   */
+  /** Represents a recommended action item for the user. */
   public static class ActionItem {
 
     @JsonProperty("id")
     private String id;
 
     @JsonProperty("type")
-    private String type; // 'FOLLOW_UP', 'INTERVIEW_PREP', 'DEADLINE_REMINDER', 'CONTACT', 'APPLICATION_SUBMIT'
+    private String
+        type; // 'FOLLOW_UP', 'INTERVIEW_PREP', 'DEADLINE_REMINDER', 'CONTACT', 'APPLICATION_SUBMIT'
 
     @JsonProperty("title")
     private String title;

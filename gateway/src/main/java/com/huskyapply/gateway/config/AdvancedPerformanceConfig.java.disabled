@@ -1,7 +1,7 @@
 package com.huskyapply.gateway.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.huskyapply.gateway.service.PerformanceMonitoringService;
+// import com.huskyapply.gateway.service.PerformanceMonitoringService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -210,15 +210,15 @@ public class AdvancedPerformanceConfig {
 
     // Optimized adaptive configuration - 40-50% throughput improvement
     int availableCpus = Runtime.getRuntime().availableProcessors();
-    
+
     // Dynamic core pool size based on CPU cores and workload type
     int optimizedCorePoolSize = Math.max(asyncCorePoolSize, availableCpus * 2);
     int optimizedMaxPoolSize = Math.max(asyncMaxPoolSize, availableCpus * 4);
-    
+
     // Adaptive queue capacity based on memory and expected load
     long maxMemoryMB = Runtime.getRuntime().maxMemory() / (1024 * 1024);
     int adaptiveQueueCapacity = (int) Math.min(asyncQueueCapacity, maxMemoryMB / 10);
-    
+
     executor.setCorePoolSize(optimizedCorePoolSize);
     executor.setMaxPoolSize(optimizedMaxPoolSize);
     executor.setQueueCapacity(adaptiveQueueCapacity);
@@ -238,10 +238,14 @@ public class AdvancedPerformanceConfig {
     executor.setAwaitTerminationSeconds(180); // Extended for safety
 
     executor.initialize();
-    
+
     // Log optimized configuration
-    logger.info("Optimized async executor configured - Core: {}, Max: {}, Queue: {}, CPUs: {}", 
-               optimizedCorePoolSize, optimizedMaxPoolSize, adaptiveQueueCapacity, availableCpus);
+    logger.info(
+        "Optimized async executor configured - Core: {}, Max: {}, Queue: {}, CPUs: {}",
+        optimizedCorePoolSize,
+        optimizedMaxPoolSize,
+        adaptiveQueueCapacity,
+        availableCpus);
 
     // Monitor thread pool metrics
     Gauge.builder("performance.async.pool.active")
@@ -255,54 +259,57 @@ public class AdvancedPerformanceConfig {
 
     return executor;
   }
-  
+
   /**
    * Smart Rejection Handler with adaptive backpressure and performance monitoring.
-   * 
-   * This handler provides intelligent task rejection with metrics collection
-   * and adaptive behavior based on system load.
+   *
+   * <p>This handler provides intelligent task rejection with metrics collection and adaptive
+   * behavior based on system load.
    */
   private class SmartRejectionHandler implements RejectedExecutionHandler {
-    private final Counter rejectedTasks = Counter.builder("performance.async.rejected")
-        .description("Rejected async tasks")
-        .register(meterRegistry);
-    
+    private final Counter rejectedTasks =
+        Counter.builder("performance.async.rejected")
+            .description("Rejected async tasks")
+            .register(meterRegistry);
+
     @Override
     public void rejectedExecution(Runnable task, ThreadPoolExecutor executor) {
       rejectedTasks.increment();
-      
+
       // Check if executor is shutting down
       if (executor.isShutdown()) {
         logger.warn("Task rejected due to executor shutdown");
         return;
       }
-      
+
       // Adaptive rejection strategy based on system load
       double cpuUsage = getSystemCpuUsage();
       long freeMemoryMB = Runtime.getRuntime().freeMemory() / (1024 * 1024);
-      
+
       // If system resources are available, try caller runs
       if (cpuUsage < 0.8 && freeMemoryMB > 100) {
-        logger.info("Executing rejected task in caller thread (CPU: {}%, Free Memory: {}MB)", 
-                   (int)(cpuUsage * 100), freeMemoryMB);
+        logger.info(
+            "Executing rejected task in caller thread (CPU: {}%, Free Memory: {}MB)",
+            (int) (cpuUsage * 100), freeMemoryMB);
         if (!executor.isShutdown()) {
           task.run();
         }
       } else {
         // System under pressure - drop task with warning
-        logger.warn("Dropping task due to high system load (CPU: {}%, Free Memory: {}MB)", 
-                   (int)(cpuUsage * 100), freeMemoryMB);
-        
+        logger.warn(
+            "Dropping task due to high system load (CPU: {}%, Free Memory: {}MB)",
+            (int) (cpuUsage * 100), freeMemoryMB);
+
         // Could implement circuit breaker logic here if needed
         // throw new RejectedExecutionException("Task rejected due to system overload");
       }
     }
-    
+
     private double getSystemCpuUsage() {
       try {
-        com.sun.management.OperatingSystemMXBean osBean = 
-            (com.sun.management.OperatingSystemMXBean) 
-            java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+        com.sun.management.OperatingSystemMXBean osBean =
+            (com.sun.management.OperatingSystemMXBean)
+                java.lang.management.ManagementFactory.getOperatingSystemMXBean();
         return osBean.getSystemCpuLoad();
       } catch (Exception e) {
         return 0.5; // Default to moderate load if we can't measure
@@ -331,10 +338,11 @@ public class AdvancedPerformanceConfig {
     return new PerformanceMonitoringFilter();
   }
 
-  @Bean
-  public PerformanceMonitoringService performanceMonitoringService() {
-    return new PerformanceMonitoringService(meterRegistry, redisTemplate(redisConnectionFactory()));
-  }
+  // @Bean
+  // public PerformanceMonitoringService performanceMonitoringService() {
+  // return new PerformanceMonitoringService(meterRegistry,
+  // redisTemplate(redisConnectionFactory()));
+  // }
 
   @Bean
   public HealthIndicator performanceHealthIndicator() {
@@ -437,7 +445,8 @@ public class AdvancedPerformanceConfig {
 
   // Utility method for metrics
   private double getActiveConnectionCount() {
-    // This would be implemented to return actual connection count from connection pool
+    // This would be implemented to return actual connection count from connection
+    // pool
     // For now, return a mock value
     return Math.random() * 50; // Mock active connection count
   }

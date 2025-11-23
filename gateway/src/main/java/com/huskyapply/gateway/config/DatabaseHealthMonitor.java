@@ -68,34 +68,40 @@ public class DatabaseHealthMonitor implements HealthIndicator {
 
   /** Register Micrometer metrics for database monitoring. */
   private void registerMetrics(MeterRegistry meterRegistry) {
-    Gauge.builder("huskyapply.database.connections.master")
+    Gauge.builder("huskyapply.database.connections.master", masterConnectionCount, AtomicLong::get)
         .description("Number of active connections to master database")
-        .register(meterRegistry, masterConnectionCount, AtomicLong::get);
+        .register(meterRegistry);
 
-    Gauge.builder("huskyapply.database.connections.replica")
+    Gauge.builder(
+            "huskyapply.database.connections.replica", replicaConnectionCount, AtomicLong::get)
         .description("Number of active connections to replica databases")
-        .register(meterRegistry, replicaConnectionCount, AtomicLong::get);
+        .register(meterRegistry);
 
-    Gauge.builder("huskyapply.database.replication.lag.seconds")
+    Gauge.builder(
+            "huskyapply.database.replication.lag.seconds", replicationLagSeconds, AtomicLong::get)
         .description("Replication lag in seconds")
-        .register(meterRegistry, replicationLagSeconds, AtomicLong::get);
+        .register(meterRegistry);
 
-    Gauge.builder("huskyapply.database.health.master")
-        .description("Master database health status (1 = healthy, 0 = unhealthy)")
-        .register(
-            meterRegistry,
+    Gauge.builder(
+            "huskyapply.database.health.master",
             this,
-            monitor -> databaseHealthMap.get("master").isHealthy() ? 1.0 : 0.0);
+            monitor -> databaseHealthMap.get("master").isHealthy() ? 1.0 : 0.0)
+        .description("Master database health status (1 = healthy, 0 = unhealthy)")
+        .register(meterRegistry);
 
-    Gauge.builder("huskyapply.database.health.read1")
+    Gauge.builder(
+            "huskyapply.database.health.read1",
+            this,
+            monitor -> databaseHealthMap.get("read1").isHealthy() ? 1.0 : 0.0)
         .description("Read replica 1 health status (1 = healthy, 0 = unhealthy)")
-        .register(
-            meterRegistry, this, monitor -> databaseHealthMap.get("read1").isHealthy() ? 1.0 : 0.0);
+        .register(meterRegistry);
 
-    Gauge.builder("huskyapply.database.health.read2")
+    Gauge.builder(
+            "huskyapply.database.health.read2",
+            this,
+            monitor -> databaseHealthMap.get("read2").isHealthy() ? 1.0 : 0.0)
         .description("Read replica 2 health status (1 = healthy, 0 = unhealthy)")
-        .register(
-            meterRegistry, this, monitor -> databaseHealthMap.get("read2").isHealthy() ? 1.0 : 0.0);
+        .register(meterRegistry);
   }
 
   /** Spring Boot Health Indicator implementation. */
@@ -162,14 +168,12 @@ public class DatabaseHealthMonitor implements HealthIndicator {
   private void checkDatabaseHealth(String databaseName, ConnectionFactory connectionFactory) {
     Instant startTime = Instant.now();
 
-    connectionFactory
-        .create()
+    Mono.from(connectionFactory.create())
         .flatMap(
             connection -> {
               Statement statement = connection.createStatement("SELECT 1 as health_check");
-              return statement
-                  .execute()
-                  .flatMap(result -> result.map((row, metadata) -> row.get("health_check")))
+              return Mono.from(statement.execute())
+                  .flatMapMany(result -> result.map((row, metadata) -> row.get("health_check")))
                   .collectList()
                   .then(Mono.fromRunnable(() -> connection.close()))
                   .then(Mono.just(connection));
@@ -193,18 +197,15 @@ public class DatabaseHealthMonitor implements HealthIndicator {
 
   /** Check replication lag by querying the master database. */
   private void checkReplicationLag() {
-    routingService
-        .getMasterConnectionFactory()
-        .create()
+    Mono.from(routingService.getMasterConnectionFactory().create())
         .flatMap(
             connection -> {
               Statement statement =
                   connection.createStatement(
                       "SELECT COALESCE(EXTRACT(EPOCH FROM MAX(replay_lag)), 0) as max_lag_seconds "
                           + "FROM pg_stat_replication");
-              return statement
-                  .execute()
-                  .flatMap(
+              return Mono.from(statement.execute())
+                  .flatMapMany(
                       result ->
                           result.map(
                               (row, metadata) -> {

@@ -38,6 +38,11 @@ class JobServiceTest {
 
   @Mock private SubscriptionService subscriptionService;
 
+  @Mock
+  private com.huskyapply.gateway.service.messaging.MessageBatchingService messageBatchingService;
+
+  @Mock private com.huskyapply.gateway.grpc.JobProcessingClient jobProcessingClient;
+
   private JobService jobService;
 
   private User testUser;
@@ -47,7 +52,12 @@ class JobServiceTest {
   @BeforeEach
   void setUp() {
     jobService =
-        new JobService(jobRepository, artifactRepository, rabbitTemplate, subscriptionService);
+        new JobService(
+            jobRepository,
+            artifactRepository,
+            rabbitTemplate,
+            subscriptionService,
+            messageBatchingService);
 
     // Set up test configuration values
     ReflectionTestUtils.setField(jobService, "exchangeName", "jobs.exchange");

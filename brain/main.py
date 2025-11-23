@@ -93,7 +93,7 @@ def setup_opentelemetry() -> None:
 
     # Auto-instrument HTTP client
     HTTPXClientInstrumentor().instrument()
-    
+
     # Auto-instrument logging
     LoggingInstrumentor().instrument(set_logging_format=True)
 
@@ -154,14 +154,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager with resource cleanup and optimization initialization."""
     # Startup
     logger.info("Starting HuskyApply Brain Service with AI Optimizations")
-    
+
     # Load and validate optimization configuration
     optimization_config = get_optimization_config()
     config_issues = validate_config()
-    
+
     if config_issues:
         logger.warning(f"Configuration issues detected: {config_issues}")
-    
+
     logger.info(
         f"Service configuration: {{"
         + f"'gateway_url': '{GATEWAY_INTERNAL_URL}', "
@@ -172,39 +172,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         + f"'optimization_profile': '{optimization_config.default_optimization_profile}'"
         + f"}}"
     )
-    
+
     # Initialize resource manager
     resource_manager = get_resource_manager()
     logger.info("Resource manager initialized")
-    
+
     # Initialize optimization components
     try:
         # Validate vector database configuration
         if not validate_configuration():
             logger.error("Vector database configuration validation failed")
             raise RuntimeError("Invalid vector cache configuration")
-        
+
         # Initialize unified cache system (semantic + advanced multi-layer)
         if optimization_config.enable_semantic_caching:
             # Initialize advanced multi-layer cache with analytics
             cache_integration_config = get_integration_config()
             unified_cache = await initialize_unified_cache()
-            
+
             logger.info(f"Unified cache system initialized: migration_mode={cache_integration_config.migration_mode}, "
                        f"L1_size={cache_integration_config.l1_cache_size}, "
                        f"analytics_enabled={cache_integration_config.enable_performance_monitoring}")
-            
+
             # Initialize legacy semantic cache for backward compatibility
             enhanced_cache_config = create_production_cache_config()
             semantic_cache = await initialize_cache(enhanced_cache_config)
             logger.info("Legacy semantic cache maintained for backward compatibility")
         else:
             logger.info("Semantic caching disabled - AI costs will not be optimized")
-        
+
         # Initialize AI optimizer
         ai_optimizer = get_ai_optimizer()
         logger.info("AI optimizer initialized with circuit breakers")
-        
+
         # Initialize streaming handler if enabled
         if optimization_config.enable_streaming:
             streaming_config = optimization_config.to_streaming_config()
@@ -212,7 +212,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 GATEWAY_INTERNAL_URL, INTERNAL_API_KEY, streaming_config
             )
             logger.info(f"Streaming handler initialized in {streaming_config.mode.value} mode")
-        
+
         # Preload models if enabled
         if optimization_config.enable_model_preloading:
             try:
@@ -221,20 +221,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 logger.info("Models preloaded and warmed up")
             except Exception as e:
                 logger.warning(f"Model preloading failed: {e}")
-        
+
         logger.info("All optimization components initialized successfully")
-        
+
     except Exception as e:
         logger.error(f"Failed to initialize optimization components: {e}")
         # Continue without optimizations
         logger.warning("Continuing with basic functionality")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down HuskyApply Brain Service")
     shutdown_event.set()
-    
+
     # Graceful resource cleanup
     try:
         # Shutdown unified cache system
@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 logger.info("Unified cache system shutdown completed")
             except Exception as e:
                 logger.error(f"Error during cache shutdown: {e}")
-        
+
         # Shutdown resource manager
         await resource_manager.shutdown()
         logger.info("Resource manager shutdown completed")
@@ -315,7 +315,7 @@ async def optimization_status() -> Dict[str, Any]:
     """Get status of AI optimization features."""
     try:
         optimization_config = get_optimization_config()
-        
+
         # Get cache stats if available
         cache_stats = {}
         try:
@@ -324,7 +324,7 @@ async def optimization_status() -> Dict[str, Any]:
             cache_stats = semantic_cache.get_cache_stats()
         except Exception as e:
             cache_stats = {"error": f"Cache unavailable: {str(e)}"}
-        
+
         # Get AI optimizer stats
         ai_optimizer_stats = {}
         try:
@@ -332,7 +332,7 @@ async def optimization_status() -> Dict[str, Any]:
             ai_optimizer_stats = ai_optimizer.get_cost_analytics()
         except Exception as e:
             ai_optimizer_stats = {"error": f"AI optimizer unavailable: {str(e)}"}
-        
+
         # Get streaming stats
         streaming_stats = {}
         try:
@@ -341,7 +341,7 @@ async def optimization_status() -> Dict[str, Any]:
             streaming_stats = streaming_handler.get_streaming_analytics()
         except Exception as e:
             streaming_stats = {"error": f"Streaming handler unavailable: {str(e)}"}
-        
+
         return {
             "optimization_config": {
                 "caching_enabled": optimization_config.enable_semantic_caching,
@@ -356,7 +356,7 @@ async def optimization_status() -> Dict[str, Any]:
             "streaming_analytics": streaming_stats,
             "timestamp": time.time()
         }
-        
+
     except Exception as e:
         logger.error(f"Error getting optimization status: {e}")
         return {"error": str(e), "timestamp": time.time()}
@@ -368,7 +368,7 @@ async def cost_analytics(user_id: Optional[str] = None) -> Dict[str, Any]:
     try:
         ai_optimizer = get_ai_optimizer()
         analytics = ai_optimizer.get_cost_analytics(user_id)
-        
+
         return {
             "status": "success",
             "data": analytics,
@@ -386,7 +386,7 @@ async def cache_analytics() -> Dict[str, Any]:
         from semantic_cache import get_semantic_cache
         semantic_cache = get_semantic_cache()
         stats = semantic_cache.get_cache_stats()
-        
+
         return {
             "status": "success",
             "data": stats,
@@ -404,7 +404,7 @@ async def clear_cache() -> Dict[str, Any]:
         from semantic_cache import get_semantic_cache
         semantic_cache = get_semantic_cache()
         success = await semantic_cache.clear_cache()
-        
+
         return {
             "status": "success" if success else "error",
             "message": "Cache cleared successfully" if success else "Failed to clear cache",
@@ -421,7 +421,7 @@ async def streaming_status() -> Dict[str, Any]:
     try:
         from streaming_handler import get_streaming_handler
         streaming_handler = get_streaming_handler()
-        
+
         return {
             "status": "success",
             "data": {
@@ -443,9 +443,9 @@ async def stream_test(request: Dict[str, Any]) -> Dict[str, Any]:
         model_provider = request.get("model_provider", "openai")
         model_name = request.get("model_name", "gpt-4o")
         job_id = request.get("job_id", f"stream_test_{int(time.time())}")
-        
+
         logger.info(f"Starting streaming test for job {job_id}")
-        
+
         # Collect all streaming updates
         updates = []
         async for update in create_optimized_streaming_cover_letter_chain(
@@ -467,7 +467,7 @@ async def stream_test(request: Dict[str, Any]) -> Dict[str, Any]:
                 "quality_score": update.get("quality_score", 0.0),
                 "timestamp": update.get("timestamp", time.time())
             })
-        
+
         return {
             "status": "success",
             "job_id": job_id,
@@ -477,7 +477,7 @@ async def stream_test(request: Dict[str, Any]) -> Dict[str, Any]:
             "updates": updates,
             "timestamp": time.time()
         }
-        
+
     except Exception as e:
         logger.error(f"Streaming test error: {e}")
         return {"status": "error", "error": str(e), "timestamp": time.time()}
@@ -488,7 +488,7 @@ async def model_status() -> Dict[str, Any]:
     """Get status of AI models and circuit breakers."""
     try:
         ai_optimizer = get_ai_optimizer()
-        
+
         return {
             "status": "success",
             "data": {
@@ -559,6 +559,49 @@ class RabbitMQConsumer:
             logger.error(f"Failed to connect to RabbitMQ: {e}")
             return False
 
+    async def _process_ai_generation_async(self, jd_text: str, job_id: str, model_provider: str, model_name: str, user_id: str, trace_ctx: TraceContext):
+        """
+        Process AI generation using the optimized streaming chain.
+        This runs in an asyncio event loop.
+        """
+        optimization_config = get_optimization_config()
+
+        # Configure streaming handler if not already configured
+        try:
+            from streaming_handler import get_streaming_handler
+            streaming_handler = get_streaming_handler()
+            if not streaming_handler.gateway_url:
+                streaming_handler.configure_gateway(GATEWAY_INTERNAL_URL, INTERNAL_API_KEY)
+        except Exception as streaming_error:
+            logger.warning(f"Streaming handler configuration failed: {streaming_error}")
+
+        full_content = []
+        processing_metadata = {}
+
+        # Iterate through streaming updates
+        # Even though we are in RabbitMQ consumer (background), we use the streaming chain
+        # to leverage its robustness (circuit breakers, etc.) and potential for future streaming support.
+        async for update in create_optimized_streaming_cover_letter_chain(
+            jd_text=jd_text,
+            model_provider=model_provider,
+            model_name=model_name,
+            user_id=user_id,
+            job_id=job_id,
+            optimization_profile=optimization_config.default_optimization_profile,
+            enable_streaming=True,
+            enable_caching=optimization_config.enable_semantic_caching
+        ):
+            if update.get("streaming"):
+                chunk = update.get("content", "")
+                if chunk:
+                    full_content.append(chunk)
+            elif update.get("complete"):
+                processing_metadata = update
+                if "content" in update and not full_content:
+                    full_content = [update["content"]]
+
+        return "".join(full_content), processing_metadata
+
     def message_callback(
         self,
         channel: BlockingChannel,
@@ -577,6 +620,7 @@ class RabbitMQConsumer:
             resume_uri = message.get("resumeUri")
             model_provider = message.get("modelProvider", "openai")
             model_name = message.get("modelName")
+            user_id = message.get("userId")
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON message: {e}")
             job_counter.labels(status="parse_error").inc()
@@ -635,52 +679,35 @@ class RabbitMQConsumer:
 
                     # Time the AI chain processing
                     ai_start_time = time.time()
-                    
+
                     try:
                         # Try streaming optimized chain first
                         try:
-                            optimization_config = get_optimization_config()
-                            
-                            # Prepare callback URL for streaming
-                            callback_url = f"{GATEWAY_INTERNAL_URL}/api/v1/internal/applications/{job_id}/events"
-                            
-                            # Configure streaming handler if not already configured
-                            try:
-                                from streaming_handler import get_streaming_handler
-                                streaming_handler = get_streaming_handler()
-                                if not streaming_handler.gateway_url:
-                                    streaming_handler.configure_gateway(GATEWAY_INTERNAL_URL, INTERNAL_API_KEY)
-                            except Exception as streaming_error:
-                                logger.warning(f"Streaming handler configuration failed: {streaming_error}")
-                            
-                            # Use streaming AI chain for real-time updates
-                            generated_cover_letter = None
-                            processing_metadata = {}
-                            
-                            logger.info(f"Starting streaming AI generation for job {job_id}")
-                            
-                            # TODO: Fix async streaming - temporarily disabled for testing
-                            # Using basic chain as fallback for GitHub deployment
-                            logger.info("Using basic AI chain (streaming temporarily disabled)")
-                            cover_letter_chain = create_cover_letter_chain(model_provider, model_name)
-                            generated_cover_letter = cover_letter_chain.invoke({"jd_text": jd_text})
-                            processing_metadata = {"streaming_disabled": True, "model_provider": model_provider, "model_name": model_name}
-                            
+                            logger.info(f"Starting optimized AI generation for job {job_id}")
+
+                            # Run async processing in a new event loop
+                            generated_cover_letter, processing_metadata = asyncio.run(
+                                self._process_ai_generation_async(
+                                    jd_text, job_id, model_provider, model_name,
+                                    user_id, trace_ctx
+                                )
+                            )
+
                             logger.info(
                                 f"Optimized AI processing completed. Cost: ${processing_metadata.get('cost_usd', 0):.4f}, "
                                 f"Quality: {processing_metadata.get('quality_score', 0):.2f}, "
                                 f"Cached: {processing_metadata.get('cached', False)}",
                                 extra=trace_ctx.get_logging_extra(),
                             )
-                            
+
                         except Exception as optimized_error:
                             logger.warning(f"Optimized chain failed, falling back to basic chain: {optimized_error}")
-                            
+
                             # Fallback to basic chain
                             cover_letter_chain = create_cover_letter_chain(model_provider, model_name)
                             generated_cover_letter = cover_letter_chain.invoke({"jd_text": jd_text})
                             processing_metadata = {"fallback": True, "error": str(optimized_error)}
-                            
+
                     finally:
                         ai_chain_duration.observe(time.time() - ai_start_time)
 
@@ -692,7 +719,7 @@ class RabbitMQConsumer:
 
                 # 7. Send COMPLETED status with generated content to Gateway
                 completed_payload = {
-                    "status": "COMPLETED", 
+                    "status": "COMPLETED",
                     "content": generated_cover_letter,
                     "metadata": processing_metadata if 'processing_metadata' in locals() else {}
                 }
@@ -711,7 +738,7 @@ class RabbitMQConsumer:
 
                 # 9. Cleanup AI resources after processing
                 cleanup_ai_resources()
-                
+
                 # 10. Send acknowledgment to RabbitMQ
                 channel.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -749,7 +776,7 @@ class RabbitMQConsumer:
 
                 # Cleanup AI resources on failure as well
                 cleanup_ai_resources()
-                
+
                 channel.basic_ack(delivery_tag=method.delivery_tag)
 
     def start_consuming(self) -> None:
@@ -795,34 +822,34 @@ async def start_grpc_server_async():
         grpc_enabled = os.getenv("GRPC_ENABLED", "true").lower() == "true"
         grpc_host = os.getenv("GRPC_HOST", "0.0.0.0")
         grpc_port = int(os.getenv("GRPC_PORT", "9090"))
-        
+
         if not grpc_enabled:
             logger.info("gRPC server is disabled")
             return None, None
-        
+
         # Create and start gRPC server
         server, servicer = await create_grpc_server(
-            host=grpc_host, 
-            port=grpc_port, 
+            host=grpc_host,
+            port=grpc_port,
             max_workers=int(os.getenv("GRPC_MAX_WORKERS", "10"))
         )
-        
+
         # Initialize Gateway callback client if Gateway gRPC is enabled
         gateway_grpc_enabled = os.getenv("GATEWAY_GRPC_ENABLED", "true").lower() == "true"
         if gateway_grpc_enabled:
             gateway_host = os.getenv("GATEWAY_HOST", "localhost")
             gateway_grpc_port = int(os.getenv("GATEWAY_GRPC_PORT", "9091"))
             gateway_tls = os.getenv("GATEWAY_GRPC_TLS", "false").lower() == "true"
-            
+
             await servicer.initialize_gateway_callback_client(
                 gateway_host, gateway_grpc_port, gateway_tls
             )
-        
+
         await server.start()
         logger.info(f"gRPC server started on {grpc_host}:{grpc_port}")
-        
+
         return server, servicer
-        
+
     except Exception as e:
         logger.error(f"Failed to start gRPC server: {e}")
         return None, None
@@ -832,53 +859,53 @@ async def run_hybrid_service():
     """Run both gRPC and FastAPI servers with RabbitMQ consumer."""
     shutdown_event = threading.Event()
     services = []
-    
+
     try:
         # Start gRPC server
         grpc_server, grpc_servicer = await start_grpc_server_async()
         if grpc_server:
             services.append(("gRPC Server", grpc_server, grpc_servicer))
-        
+
         # Start RabbitMQ consumer (if enabled)
         rabbitmq_enabled = os.getenv("RABBITMQ_ENABLED", "true").lower() == "true"
         if rabbitmq_enabled:
             consumer = RabbitMQConsumer()
             consumer_thread = threading.Thread(
-                target=consumer.start_consuming, 
-                daemon=True, 
+                target=consumer.start_consuming,
+                daemon=True,
                 name="RabbitMQ-Consumer"
             )
             consumer_thread.start()
             services.append(("RabbitMQ Consumer", consumer_thread, consumer))
             logger.info("RabbitMQ consumer started")
-        
+
         # Start FastAPI server
         uvicorn_config = uvicorn.Config(
-            app, 
-            host=os.getenv("FASTAPI_HOST", "0.0.0.0"), 
+            app,
+            host=os.getenv("FASTAPI_HOST", "0.0.0.0"),
             port=int(os.getenv("FASTAPI_PORT", "8000")),
             log_level=os.getenv("LOG_LEVEL", "info").lower(),
             access_log=True,
             loop="asyncio"
         )
-        
+
         fastapi_server = uvicorn.Server(uvicorn_config)
         services.append(("FastAPI Server", fastapi_server, None))
-        
+
         # Signal handlers for graceful shutdown
         def signal_handler(signum, frame):
             logger.info(f"Received signal {signum}, initiating graceful shutdown...")
             shutdown_event.set()
-        
+
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
-        
+
         logger.info("=== HuskyApply Brain Service Started ===")
         logger.info(f"Services running: {[name for name, _, _ in services]}")
-        
+
         # Run FastAPI server
         await fastapi_server.serve()
-        
+
     except KeyboardInterrupt:
         logger.info("Received interrupt signal")
         shutdown_event.set()
@@ -888,7 +915,7 @@ async def run_hybrid_service():
     finally:
         # Graceful shutdown of all services
         logger.info("Shutting down all services...")
-        
+
         # Shutdown gRPC server
         if grpc_server and grpc_servicer:
             try:
@@ -897,12 +924,12 @@ async def run_hybrid_service():
                 logger.info("gRPC server stopped")
             except Exception as e:
                 logger.error(f"Error stopping gRPC server: {e}")
-        
+
         # Shutdown FastAPI server
         for name, service, extra in services:
             if name == "FastAPI Server" and hasattr(service, 'should_exit'):
                 service.should_exit = True
-        
+
         logger.info("All services stopped")
 
 
@@ -911,6 +938,6 @@ if __name__ == "__main__":
     logger.info(f"Configuration: gRPC={os.getenv('GRPC_ENABLED', 'true')}, "
                 f"RabbitMQ={os.getenv('RABBITMQ_ENABLED', 'true')}, "
                 f"FastAPI={os.getenv('FASTAPI_HOST', '0.0.0.0')}:{os.getenv('FASTAPI_PORT', '8000')}")
-    
+
     # Run the hybrid service
     asyncio.run(run_hybrid_service())

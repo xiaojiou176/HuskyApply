@@ -8,8 +8,8 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * Represents a contact person associated with a job application.
- * Can include recruiters, hiring managers, referrals, or other relevant contacts.
+ * Represents a contact person associated with a job application. Can include recruiters, hiring
+ * managers, referrals, or other relevant contacts.
  */
 @Table("job_contacts")
 public class JobContact {
@@ -92,11 +92,7 @@ public class JobContact {
   public JobContact() {}
 
   public JobContact(
-      UUID id,
-      UUID jobId,
-      String contactName,
-      String contactEmail,
-      String relationshipType) {
+      UUID id, UUID jobId, String contactName, String contactEmail, String relationshipType) {
     this.id = id;
     this.jobId = jobId;
     this.contactName = contactName;
@@ -256,12 +252,21 @@ public class JobContact {
   @Override
   public String toString() {
     return "JobContact{"
-        + "id=" + id
-        + ", jobId=" + jobId
-        + ", contactName='" + contactName + '\''
-        + ", contactEmail='" + contactEmail + '\''
-        + ", relationshipType='" + relationshipType + '\''
-        + ", isPrimaryContact=" + isPrimaryContact
+        + "id="
+        + id
+        + ", jobId="
+        + jobId
+        + ", contactName='"
+        + contactName
+        + '\''
+        + ", contactEmail='"
+        + contactEmail
+        + '\''
+        + ", relationshipType='"
+        + relationshipType
+        + '\''
+        + ", isPrimaryContact="
+        + isPrimaryContact
         + '}';
   }
 

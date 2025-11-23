@@ -144,6 +144,21 @@ public class SubscriptionService {
     return allowedModels.contains(modelToCheck);
   }
 
+  /** Check if user has high priority access */
+  @Transactional(readOnly = true)
+  public boolean hasHighPriorityAccess(User user) {
+    Optional<UserSubscription> subscription =
+        userSubscriptionRepository.findActiveSubscriptionByUser(user);
+
+    if (subscription.isEmpty()) {
+      return false;
+    }
+
+    UserSubscription userSub = subscription.get();
+    Boolean priority = userSub.getSubscriptionPlan().getPriorityProcessing();
+    return priority != null && priority;
+  }
+
   /** Create checkout session for subscription upgrade */
   public String createCheckoutSession(
       User user, UUID planId, String billingCycle, String successUrl, String cancelUrl) {

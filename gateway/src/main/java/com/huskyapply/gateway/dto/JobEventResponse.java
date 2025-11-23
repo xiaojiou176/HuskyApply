@@ -6,7 +6,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Response DTO for job event information. Represents a single event in the job application timeline.
+ * Response DTO for job event information. Represents a single event in the job application
+ * timeline.
  */
 public class JobEventResponse {
 
@@ -229,11 +230,19 @@ public class JobEventResponse {
   @Override
   public String toString() {
     return "JobEventResponse{"
-        + "eventId=" + eventId
-        + ", eventType='" + eventType + '\''
-        + ", eventStatus='" + eventStatus + '\''
-        + ", title='" + title + '\''
-        + ", eventDate=" + eventDate
+        + "eventId="
+        + eventId
+        + ", eventType='"
+        + eventType
+        + '\''
+        + ", eventStatus='"
+        + eventStatus
+        + '\''
+        + ", title='"
+        + title
+        + '\''
+        + ", eventDate="
+        + eventDate
         + '}';
   }
 }

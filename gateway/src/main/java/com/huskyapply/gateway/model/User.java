@@ -1,11 +1,10 @@
 package com.huskyapply.gateway.model;
 
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.UUID;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.relational.core.mapping.Column;
-import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
@@ -16,18 +15,21 @@ import org.springframework.security.core.userdetails.UserDetails;
  * the authentication framework. It stores essential user information including credentials and
  * provides the necessary methods for Spring Security authentication.
  */
-@Table("users")
+@Entity
+@jakarta.persistence.Table(name = "users")
 public class User implements UserDetails {
 
   /** Unique identifier for the user. */
-  @Id private UUID id;
+  @Id
+  @jakarta.persistence.Column(name = "id")
+  private UUID id;
 
   /** User's email address, which serves as the username. Must be unique across all users. */
-  @Column("email")
+  @jakarta.persistence.Column(name = "email")
   private String email;
 
   /** User's hashed password. Stored using BCrypt hashing for security. */
-  @Column("password")
+  @jakarta.persistence.Column(name = "password")
   private String password;
 
   // Constructors

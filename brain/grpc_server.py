@@ -13,56 +13,9 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import AsyncIterator, Dict, List, Optional, Set
 from datetime import datetime, timezone
 
-# Import generated gRPC modules (these will be generated from protobuf)
-try:
-    from grpc import job_processing_pb2
-    from grpc import job_processing_pb2_grpc
-    from grpc import connection_mgmt_pb2
-    from grpc import connection_mgmt_pb2_grpc
-except ImportError:
-    # Mock classes for development until protobuf is generated
-    class MockMessage:
-        def __init__(self, **kwargs):
-            for k, v in kwargs.items():
-                setattr(self, k, v)
-    
-    class MockStub:
-        pass
-    
-    class job_processing_pb2:
-        JobSubmissionRequest = MockMessage
-        JobSubmissionResponse = MockMessage
-        JobUpdateRequest = MockMessage
-        JobUpdateResponse = MockMessage
-        BatchJobRequest = MockMessage
-        BatchJobResponse = MockMessage
-        JobResultRequest = MockMessage
-        JobResultResponse = MockMessage
-        JobStatusUpdate = MockMessage
-        ProcessingEvent = MockMessage
-        ProcessingMetrics = MockMessage
-        HealthResponse = MockMessage
-        CancelJobRequest = MockMessage
-        CancelJobResponse = MockMessage
-        MetricsRequest = MockMessage
-        MetricsResponse = MockMessage
-        
-        # Enums
-        class JobStatus:
-            JOB_STATUS_PENDING = 1
-            JOB_STATUS_PROCESSING = 2
-            JOB_STATUS_COMPLETED = 3
-            JOB_STATUS_FAILED = 4
-            JOB_STATUS_CANCELLED = 5
-        
-        class ServiceStatus:
-            SERVICE_STATUS_HEALTHY = 1
-            SERVICE_STATUS_DEGRADED = 2
-            SERVICE_STATUS_UNHEALTHY = 3
-    
-    class job_processing_pb2_grpc:
-        JobProcessingServiceServicer = MockStub
-        GatewayCallbackServiceStub = MockStub
+# Import generated gRPC modules
+from grpc_generated import job_processing_pb2
+from grpc_generated import job_processing_pb2_grpc
 
 # Internal imports
 from ai_chain import create_optimized_cover_letter_chain, scrape_jd_text_sync
@@ -87,11 +40,14 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         self.update_streams: Dict[str, grpc.aio.ServicerContext] = {}
         self.batch_streams: Dict[str, grpc.aio.ServicerContext] = {}
         self.processing_metrics: Dict[str, float] = {}
-        
+
+        # Map job_id to list of queues for streaming updates
+        self.job_listeners: Dict[str, List[asyncio.Queue]] = {}
+
         # Gateway callback client for sending status updates
         self.gateway_callback_client: Optional[job_processing_pb2_grpc.GatewayCallbackServiceStub] = None
         self.gateway_channel: Optional[grpc.aio.Channel] = None
-        
+
         logger.info("JobProcessingServicer initialized")
 
     async def SubmitJob(self, request: job_processing_pb2.JobSubmissionRequest, context: grpc.aio.ServicerContext):
@@ -101,16 +57,16 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         try:
             job_id = request.job_id
             logger.info(f"Received gRPC job submission for job {job_id}")
-            
+
             # Create trace context
             trace_id = request.trace_id or str(uuid.uuid4())
             trace_ctx = TraceContext(trace_id=trace_id, job_id=job_id, operation="job_submission")
-            
+
             with trace_ctx:
                 # Validate request
                 if not request.jd_url or not request.resume_uri:
                     raise grpc.RpcError("Missing required fields: jd_url or resume_uri")
-                
+
                 # Check resource availability
                 if not self.resource_manager.can_accept_job():
                     return job_processing_pb2.JobSubmissionResponse(
@@ -121,7 +77,7 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                         queue_position=len(self.active_jobs) + 1,
                         estimated_completion_ms=60000  # 1 minute estimate
                     )
-                
+
                 # Store job for processing
                 job_data = {
                     "job_id": job_id,
@@ -136,12 +92,15 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                     "submitted_at": time.time(),
                     "status": "PENDING"
                 }
-                
+
                 self.active_jobs[job_id] = job_data
-                
+                # Initialize listeners list for this job
+                if job_id not in self.job_listeners:
+                    self.job_listeners[job_id] = []
+
                 # Start processing asynchronously
                 asyncio.create_task(self._process_job_async(job_data, trace_ctx))
-                
+
                 return job_processing_pb2.JobSubmissionResponse(
                     job_id=job_id,
                     status=job_processing_pb2.JobStatus.JOB_STATUS_PENDING,
@@ -150,7 +109,7 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                     queue_position=0,
                     estimated_completion_ms=30000  # 30 second estimate
                 )
-                
+
         except Exception as e:
             logger.error(f"Error submitting job {request.job_id}: {e}", exc_info=True)
             await context.abort(grpc.StatusCode.INTERNAL, f"Job submission failed: {str(e)}")
@@ -161,33 +120,51 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         """
         stream_id = str(uuid.uuid4())
         self.update_streams[stream_id] = context
-        
+
+        # Create a queue for this stream
+        update_queue = asyncio.Queue()
+
+        # Subscribe to updates for all requested jobs
+        subscribed_jobs = []
+        for job_id in request.job_ids:
+            if job_id in self.active_jobs:
+                if job_id not in self.job_listeners:
+                    self.job_listeners[job_id] = []
+                self.job_listeners[job_id].append(update_queue)
+                subscribed_jobs.append(job_id)
+
+                # Send initial status immediately
+                job_data = self.active_jobs[job_id]
+                initial_response = self._create_job_update_response(job_data)
+                await context.write(initial_response)
+
         try:
-            logger.info(f"Started job update stream {stream_id} for {len(request.job_ids)} jobs")
-            
-            # Send initial status for all requested jobs
-            for job_id in request.job_ids:
-                if job_id in self.active_jobs:
-                    job_data = self.active_jobs[job_id]
-                    response = self._create_job_update_response(job_data)
-                    yield response
-            
-            # Keep stream alive and send updates as they occur
+            logger.info(f"Started job update stream {stream_id} for jobs: {subscribed_jobs}")
+
             while True:
+                # Wait for updates
                 try:
-                    await asyncio.sleep(1)  # Check for updates every second
-                    
-                    # This would normally be triggered by job status changes
-                    # For now, we just maintain the connection
+                    # Wait for next update with a timeout to check for cancellation
+                    update = await asyncio.wait_for(update_queue.get(), timeout=1.0)
+                    yield update
+                except asyncio.TimeoutError:
+                    # Check if client disconnected
                     if context.cancelled():
                         break
-                        
+                    continue
                 except asyncio.CancelledError:
                     break
-                    
+
         except Exception as e:
             logger.error(f"Error in job update stream {stream_id}: {e}", exc_info=True)
         finally:
+            # Unsubscribe
+            for job_id in subscribed_jobs:
+                if job_id in self.job_listeners and update_queue in self.job_listeners[job_id]:
+                    self.job_listeners[job_id].remove(update_queue)
+                    if not self.job_listeners[job_id]:  # Cleanup empty lists
+                        del self.job_listeners[job_id]
+
             self.update_streams.pop(stream_id, None)
             logger.info(f"Closed job update stream {stream_id}")
 
@@ -197,27 +174,27 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         """
         stream_id = str(uuid.uuid4())
         self.batch_streams[stream_id] = context
-        
+
         try:
             logger.info(f"Started batch processing stream {stream_id}")
-            
+
             async for batch_request in request_iterator:
                 batch_id = batch_request.batch_id
                 jobs = batch_request.jobs
-                
+
                 logger.info(f"Processing batch {batch_id} with {len(jobs)} jobs")
-                
+
                 # Process jobs in parallel
                 tasks = []
                 for job_request in jobs:
                     task = asyncio.create_task(self._process_single_job_from_batch(job_request))
                     tasks.append(task)
-                
+
                 # Wait for all jobs to complete and send updates
                 completed_jobs = 0
                 failed_jobs = 0
                 job_updates = []
-                
+
                 for task in asyncio.as_completed(tasks):
                     try:
                         job_result = await task
@@ -229,7 +206,7 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                     except Exception as e:
                         logger.error(f"Batch job failed: {e}")
                         failed_jobs += 1
-                
+
                 # Send batch response
                 batch_response = job_processing_pb2.BatchJobResponse(
                     batch_id=batch_id,
@@ -239,9 +216,9 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                     job_updates=job_updates,
                     batch_status=job_processing_pb2.BatchStatus.BATCH_STATUS_COMPLETED
                 )
-                
+
                 yield batch_response
-                
+
         except Exception as e:
             logger.error(f"Error in batch processing stream {stream_id}: {e}", exc_info=True)
         finally:
@@ -253,16 +230,16 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         Retrieve job processing result.
         """
         job_id = request.job_id
-        
+
         if job_id not in self.active_jobs:
             await context.abort(grpc.StatusCode.NOT_FOUND, f"Job {job_id} not found")
-        
+
         job_data = self.active_jobs[job_id]
-        
+
         # Check if job is completed
         if job_data.get("status") != "COMPLETED":
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, f"Job {job_id} is not completed")
-        
+
         return job_processing_pb2.JobResultResponse(
             job_id=job_id,
             status=job_processing_pb2.JobStatus.JOB_STATUS_COMPLETED,
@@ -288,13 +265,13 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         """
         try:
             health_data = await monitor.comprehensive_health_check()
-            
+
             status = job_processing_pb2.ServiceStatus.SERVICE_STATUS_HEALTHY
             if health_data.get("status") == "degraded":
                 status = job_processing_pb2.ServiceStatus.SERVICE_STATUS_DEGRADED
             elif health_data.get("status") == "error":
                 status = job_processing_pb2.ServiceStatus.SERVICE_STATUS_UNHEALTHY
-            
+
             return job_processing_pb2.HealthResponse(
                 status=status,
                 version=health_data.get("version", "0.0.1"),
@@ -302,7 +279,7 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                 dependencies=self._get_dependency_status(),
                 resource_usage=self._get_resource_usage()
             )
-            
+
         except Exception as e:
             logger.error(f"Health check failed: {e}", exc_info=True)
             return job_processing_pb2.HealthResponse(
@@ -316,7 +293,7 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         Cancel a job that is currently processing.
         """
         job_id = request.job_id
-        
+
         if job_id not in self.active_jobs:
             return job_processing_pb2.CancelJobResponse(
                 job_id=job_id,
@@ -324,17 +301,20 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                 message=f"Job {job_id} not found",
                 final_status=job_processing_pb2.JobStatus.JOB_STATUS_FAILED
             )
-        
+
         job_data = self.active_jobs[job_id]
-        
+
         # Update job status
         job_data["status"] = "CANCELLED"
         job_data["cancelled_at"] = time.time()
         job_data["cancel_reason"] = request.reason
-        
+
+        # Broadcast cancellation
+        await self._broadcast_update(job_id, "CANCELLED", "Job cancelled by user")
+
         # Send status update to Gateway
         await self._send_status_update_to_gateway(job_id, "CANCELLED", "Job cancelled by user")
-        
+
         return job_processing_pb2.CancelJobResponse(
             job_id=job_id,
             cancelled=True,
@@ -348,12 +328,12 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         """
         try:
             system_metrics = monitor.collect_system_metrics()
-            
+
             # Create aggregated stats
             total_jobs = len(self.active_jobs)
             completed_jobs = sum(1 for job in self.active_jobs.values() if job.get("status") == "COMPLETED")
             processing_jobs = sum(1 for job in self.active_jobs.values() if job.get("status") == "PROCESSING")
-            
+
             metrics = [
                 job_processing_pb2.ProcessingMetrics(
                     service_name="huskyapply-brain",
@@ -383,7 +363,7 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                     custom_metrics=self.processing_metrics
                 )
             ]
-            
+
             return job_processing_pb2.MetricsResponse(
                 metrics=metrics,
                 aggregated=job_processing_pb2.AggregatedStats(
@@ -394,49 +374,89 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                     total_processing_time_ms=sum(job.get("processing_time_ms", 0) for job in self.active_jobs.values())
                 )
             )
-            
+
         except Exception as e:
             logger.error(f"Error getting processing metrics: {e}", exc_info=True)
             await context.abort(grpc.StatusCode.INTERNAL, f"Failed to get metrics: {str(e)}")
 
     async def _process_job_async(self, job_data: Dict, trace_ctx: TraceContext):
         """
-        Process a single job asynchronously. This replaces the RabbitMQ message callback logic.
+        Process a single job asynchronously with streaming support.
         """
         job_id = job_data["job_id"]
         start_time = time.time()
-        
+
+        # Import streaming chain here to avoid circular imports if any
+        from ai_chain import create_optimized_streaming_cover_letter_chain
+
         try:
             with trace_ctx:
                 logger.info(f"Starting async processing for job {job_id}", extra=trace_ctx.get_logging_extra())
-                
+
                 # Update status to PROCESSING
                 job_data["status"] = "PROCESSING"
+                await self._broadcast_update(job_id, "PROCESSING", "Job processing started")
                 await self._send_status_update_to_gateway(job_id, "PROCESSING", "Job processing started")
-                
+
                 # Scrape job description
                 logger.info(f"Scraping job description from: {job_data['jd_url']}")
                 jd_text = scrape_jd_text_sync(job_data["jd_url"])
-                
+
                 # Get optimization configuration
                 optimization_config = get_optimization_config()
-                
-                # Process with AI chain
-                logger.info("Invoking optimized AI chain...")
-                generated_content, processing_metadata = await create_optimized_cover_letter_chain(
+
+                # Process with AI chain using streaming
+                logger.info("Invoking optimized streaming AI chain...")
+
+                full_content = []
+                processing_metadata = {}
+
+                # Iterate through streaming updates
+                async for update in create_optimized_streaming_cover_letter_chain(
                     jd_text=jd_text,
                     model_provider=job_data["model_provider"],
                     model_name=job_data["model_name"],
                     user_id=job_data["user_id"],
                     job_id=job_id,
                     optimization_profile=optimization_config.default_optimization_profile,
-                    enable_streaming=optimization_config.enable_streaming,
+                    enable_streaming=True, # Always enable streaming for gRPC
                     enable_caching=optimization_config.enable_semantic_caching
-                )
-                
+                ):
+                    # Handle different types of updates
+                    if update.get("streaming"):
+                        chunk = update.get("content", "")
+                        if chunk:
+                            full_content.append(chunk)
+                            # Broadcast partial content
+                            await self._broadcast_update(
+                                job_id,
+                                "PROCESSING",
+                                "Generating content...",
+                                content=chunk,
+                                is_partial=True
+                            )
+
+                    elif update.get("complete"):
+                        # Final update with metadata
+                        processing_metadata = update
+                        if "content" in update and not full_content:
+                            # If we didn't get streaming chunks but got final content
+                            full_content = [update["content"]]
+
+                    elif update.get("phase"):
+                        # Phase change update
+                        await self._broadcast_update(
+                            job_id,
+                            "PROCESSING",
+                            f"Phase: {update['phase']}"
+                        )
+
+                # Join full content
+                generated_content = "".join(full_content)
+
                 # Calculate processing time
                 processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
-                
+
                 # Update job data
                 job_data.update({
                     "status": "COMPLETED",
@@ -450,17 +470,26 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                     "model_used": f"{job_data['model_provider']}/{job_data['model_name']}",
                     "completed_at": time.time()
                 })
-                
-                # Send completion status to Gateway
+
+                # Broadcast completion
+                await self._broadcast_update(
+                    job_id,
+                    "COMPLETED",
+                    "Job completed successfully",
+                    content=generated_content,
+                    metadata=processing_metadata
+                )
+
+                # Send completion status to Gateway (persistent)
                 await self._send_status_update_to_gateway(
                     job_id, "COMPLETED", "Job completed successfully", content=generated_content
                 )
-                
+
                 logger.info(f"Job {job_id} completed successfully in {processing_time:.2f}ms")
-                
+
         except Exception as e:
             logger.error(f"Error processing job {job_id}: {e}", exc_info=True)
-            
+
             # Update job status to failed
             job_data.update({
                 "status": "FAILED",
@@ -468,9 +497,42 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                 "failed_at": time.time(),
                 "processing_time_ms": (time.time() - start_time) * 1000
             })
-            
+
+            # Broadcast failure
+            await self._broadcast_update(job_id, "FAILED", f"Job processing failed: {str(e)}")
+
             # Send failure status to Gateway
             await self._send_status_update_to_gateway(job_id, "FAILED", f"Job processing failed: {str(e)}")
+
+    async def _broadcast_update(self, job_id: str, status: str, message: str, content: Optional[str] = None, is_partial: bool = False, metadata: Dict = None):
+        """
+        Broadcast an update to all listeners for a specific job.
+        """
+        if job_id not in self.job_listeners:
+            return
+
+        grpc_status = self._convert_status_to_grpc(status)
+
+        # Create response object
+        response = job_processing_pb2.JobUpdateResponse(
+            job_id=job_id,
+            status=grpc_status,
+            updated_at=self._get_current_timestamp(),
+            message=message,
+            content_chunk=content if content else "",
+            is_partial=is_partial
+        )
+
+        if metadata:
+            # Add metadata if provided (needs to be converted to string map for protobuf usually, or specific fields)
+            # For now, we'll just skip complex metadata in the stream update to keep it light,
+            # or assuming metadata field in JobUpdateResponse handles it.
+            pass
+
+        # Send to all queues
+        listeners = self.job_listeners[job_id]
+        for queue in listeners:
+            await queue.put(response)
 
     async def _process_single_job_from_batch(self, job_request) -> job_processing_pb2.JobUpdateResponse:
         """
@@ -479,18 +541,18 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         # This is a simplified version for batch processing
         # In practice, this would follow the same logic as _process_job_async
         job_id = job_request.job_id
-        
+
         try:
             # Simulate processing
             await asyncio.sleep(1)  # Simulate AI processing time
-            
+
             return job_processing_pb2.JobUpdateResponse(
                 job_id=job_id,
                 status=job_processing_pb2.JobStatus.JOB_STATUS_COMPLETED,
                 updated_at=self._get_current_timestamp(),
                 message="Batch job completed"
             )
-            
+
         except Exception as e:
             logger.error(f"Batch job {job_id} failed: {e}")
             return job_processing_pb2.JobUpdateResponse(
@@ -506,18 +568,18 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         This replaces the HTTP callback mechanism.
         """
         if not self.gateway_callback_client:
-            logger.warning("Gateway callback client not initialized, cannot send status update")
+            # logger.warning("Gateway callback client not initialized, cannot send status update")
             return
-        
+
         try:
             # Convert status to gRPC enum
             grpc_status = self._convert_status_to_grpc(status)
-            
+
             # Create metadata
             metadata = {}
             if content:
                 metadata["content"] = content
-            
+
             # Create status update request
             status_update = job_processing_pb2.JobStatusUpdate(
                 job_id=job_id,
@@ -526,15 +588,15 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                 updated_at=self._get_current_timestamp(),
                 metadata=metadata
             )
-            
+
             # Send to Gateway
             response = await self.gateway_callback_client.UpdateJobStatus(status_update)
-            
+
             if response.acknowledged:
                 logger.debug(f"Status update acknowledged for job {job_id}")
             else:
                 logger.warning(f"Status update not acknowledged for job {job_id}: {response.message}")
-                
+
         except Exception as e:
             logger.error(f"Failed to send status update to Gateway for job {job_id}: {e}")
 
@@ -543,7 +605,7 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         Create a job update response from job data.
         """
         grpc_status = self._convert_status_to_grpc(job_data["status"])
-        
+
         return job_processing_pb2.JobUpdateResponse(
             job_id=job_data["job_id"],
             status=grpc_status,
@@ -610,11 +672,11 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                 self.gateway_channel = grpc.aio.secure_channel(f"{gateway_host}:{gateway_port}", credentials)
             else:
                 self.gateway_channel = grpc.aio.insecure_channel(f"{gateway_host}:{gateway_port}")
-            
+
             self.gateway_callback_client = job_processing_pb2_grpc.GatewayCallbackServiceStub(self.gateway_channel)
-            
+
             logger.info(f"Initialized Gateway callback client to {gateway_host}:{gateway_port}")
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize Gateway callback client: {e}")
 
@@ -623,7 +685,7 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
         Gracefully shutdown the gRPC server.
         """
         logger.info("Shutting down gRPC server")
-        
+
         # Close all active streams
         for stream_id in list(self.update_streams.keys()):
             try:
@@ -631,21 +693,21 @@ class JobProcessingServicer(job_processing_pb2_grpc.JobProcessingServiceServicer
                 # Context will be cleaned up automatically
             except Exception as e:
                 logger.warning(f"Error closing update stream {stream_id}: {e}")
-        
+
         for stream_id in list(self.batch_streams.keys()):
             try:
                 context = self.batch_streams.pop(stream_id)
                 # Context will be cleaned up automatically
             except Exception as e:
                 logger.warning(f"Error closing batch stream {stream_id}: {e}")
-        
+
         # Close Gateway callback client
         if self.gateway_channel:
             try:
                 await self.gateway_channel.close()
             except Exception as e:
                 logger.warning(f"Error closing Gateway channel: {e}")
-        
+
         logger.info("gRPC server shutdown completed")
 
 
@@ -654,11 +716,11 @@ async def create_grpc_server(host: str = "0.0.0.0", port: int = 9090, max_worker
     Create and configure the gRPC server.
     """
     server = grpc.aio.server(ThreadPoolExecutor(max_workers=max_workers))
-    
+
     # Add the job processing servicer
     job_servicer = JobProcessingServicer()
     job_processing_pb2_grpc.add_JobProcessingServiceServicer_to_server(job_servicer, server)
-    
+
     # Configure server options for performance
     options = [
         ('grpc.keepalive_time_ms', 30000),
@@ -670,17 +732,17 @@ async def create_grpc_server(host: str = "0.0.0.0", port: int = 9090, max_worker
         ('grpc.max_receive_message_length', 4 * 1024 * 1024),  # 4MB
         ('grpc.max_send_message_length', 4 * 1024 * 1024),     # 4MB
     ]
-    
+
     # Add options to server
     for option in options:
         server.add_generic_rpc_handlers([])  # This applies the options
-    
+
     # Bind to port
     listen_addr = f"{host}:{port}"
     server.add_insecure_port(listen_addr)
-    
+
     logger.info(f"gRPC server configured to listen on {listen_addr}")
-    
+
     return server, job_servicer
 
 
@@ -689,10 +751,10 @@ async def start_grpc_server():
     Start the gRPC server and handle shutdown gracefully.
     """
     server, servicer = await create_grpc_server()
-    
+
     await server.start()
     logger.info("gRPC server started successfully")
-    
+
     try:
         await server.wait_for_termination()
     except KeyboardInterrupt:
@@ -701,14 +763,3 @@ async def start_grpc_server():
         await servicer.shutdown()
         await server.stop(grace=10.0)
         logger.info("gRPC server stopped")
-
-
-if __name__ == "__main__":
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='level=%(levelname)s timestamp=%(asctime)s service=brain-grpc msg="%(message)s"'
-    )
-    
-    # Start the server
-    asyncio.run(start_grpc_server())

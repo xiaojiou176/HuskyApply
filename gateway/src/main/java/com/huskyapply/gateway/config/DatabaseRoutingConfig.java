@@ -96,14 +96,6 @@ public class DatabaseRoutingConfig {
             .applicationName("huskyapply-gateway-read1")
             .connectTimeout(Duration.ofSeconds(20))
             .statementTimeout(Duration.ofSeconds(120))
-            .options(
-                org.springframework.util.CollectionUtils.toMultiValueMap(
-                    org.springframework.util.StringUtils.commaDelimitedListToStringArray(
-                        "default_transaction_isolation=read committed,"
-                            + "application_name=huskyapply-read-replica-1,"
-                            + "tcp_keepalives_idle=300,"
-                            + "tcp_keepalives_interval=30,"
-                            + "tcp_keepalives_count=3")))
             .build();
 
     PostgresqlConnectionFactory connectionFactory = new PostgresqlConnectionFactory(read1Config);
@@ -234,7 +226,7 @@ public class DatabaseRoutingConfig {
     @Override
     public Mono<io.r2dbc.spi.Connection> create() {
       // Default to read operations
-      return getReadConnectionFactory().create();
+      return Mono.from(getReadConnectionFactory().create());
     }
 
     public ConnectionFactory getMasterConnectionFactory() {

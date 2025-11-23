@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.CacheManager;
 
 @ExtendWith(MockitoExtension.class)
 class DashboardServiceTest {
@@ -31,6 +32,8 @@ class DashboardServiceTest {
 
   @Mock private TemplateRepository templateRepository;
 
+  @Mock private CacheManager cacheManager;
+
   private DashboardService dashboardService;
 
   private User testUser;
@@ -38,12 +41,11 @@ class DashboardServiceTest {
 
   @BeforeEach
   void setUp() {
-    dashboardService = new DashboardService(jobRepository, templateRepository);
+    dashboardService = new DashboardService(jobRepository, templateRepository, cacheManager);
 
     // Create test data
-    testUser = new User();
+    testUser = new User("test@example.com", "password");
     testUser.setId(UUID.randomUUID());
-    testUser.setEmail("test@example.com");
 
     now = Instant.now();
   }
@@ -83,7 +85,7 @@ class DashboardServiceTest {
     mockJobRepositoryCounts();
 
     Job recentJob = createTestJob("Recent Job", "COMPLETED", now.minus(1, ChronoUnit.DAYS));
-    when(jobRepository.findTop10ByUserOrderByCreatedAtDesc(testUser))
+    when(jobRepository.findTop10ByUserIdOrderByCreatedAtDesc(testUser.getId()))
         .thenReturn(Collections.singletonList(recentJob));
 
     // Act
@@ -100,21 +102,23 @@ class DashboardServiceTest {
     assertThat(result.getJobsThisMonth()).isEqualTo(8L);
     assertThat(result.getLastJobDate()).isEqualTo(recentJob.getCreatedAt());
 
-    // Verify repository calls with correct time ranges (3 calls: week, month, quarter)
-    verify(jobRepository, times(3)).countByUserAndCreatedAtAfter(eq(testUser), any(Instant.class));
+    // Verify repository calls with correct time ranges (3 calls: week, month,
+    // quarter)
+    verify(jobRepository, times(3))
+        .countByUserIdAndCreatedAtAfter(eq(testUser.getId()), any(Instant.class));
   }
 
   @Test
   void getUserStats_NoJobs() {
     // Arrange
-    when(jobRepository.countByUser(testUser)).thenReturn(0L);
-    when(jobRepository.countByUserAndStatus(testUser, "COMPLETED")).thenReturn(0L);
-    when(jobRepository.countByUserAndStatus(testUser, "FAILED")).thenReturn(0L);
-    when(jobRepository.countByUserAndStatus(testUser, "PENDING")).thenReturn(0L);
-    when(jobRepository.countByUserAndStatus(testUser, "PROCESSING")).thenReturn(0L);
-    when(jobRepository.countByUserAndCreatedAtAfter(eq(testUser), any(Instant.class)))
+    when(jobRepository.countByUserId(testUser.getId())).thenReturn(0L);
+    when(jobRepository.countByUserIdAndStatus(testUser.getId(), "COMPLETED")).thenReturn(0L);
+    when(jobRepository.countByUserIdAndStatus(testUser.getId(), "FAILED")).thenReturn(0L);
+    when(jobRepository.countByUserIdAndStatus(testUser.getId(), "PENDING")).thenReturn(0L);
+    when(jobRepository.countByUserIdAndStatus(testUser.getId(), "PROCESSING")).thenReturn(0L);
+    when(jobRepository.countByUserIdAndCreatedAtAfter(eq(testUser.getId()), any(Instant.class)))
         .thenReturn(0L);
-    when(jobRepository.findTop10ByUserOrderByCreatedAtDesc(testUser))
+    when(jobRepository.findTop10ByUserIdOrderByCreatedAtDesc(testUser.getId()))
         .thenReturn(Collections.emptyList());
 
     // Act
@@ -140,7 +144,7 @@ class DashboardServiceTest {
             "Software Engineer", "COMPLETED", now.minus(1, ChronoUnit.HOURS));
     Job job2 = createTestJob("Product Manager", "PENDING", now.minus(2, ChronoUnit.HOURS));
 
-    when(jobRepository.findTop10ByUserOrderByCreatedAtDesc(testUser))
+    when(jobRepository.findTop10ByUserIdOrderByCreatedAtDesc(testUser.getId()))
         .thenReturn(Arrays.asList(job1, job2));
 
     // Act
@@ -166,7 +170,7 @@ class DashboardServiceTest {
   @Test
   void getRecentJobs_EmptyList() {
     // Arrange
-    when(jobRepository.findTop10ByUserOrderByCreatedAtDesc(testUser))
+    when(jobRepository.findTop10ByUserIdOrderByCreatedAtDesc(testUser.getId()))
         .thenReturn(Collections.emptyList());
 
     // Act
@@ -210,7 +214,7 @@ class DashboardServiceTest {
     Job job1 = createTestJob("Software Engineer", "COMPLETED", now);
     Job job2 = createTestJob("DevOps Engineer", "PENDING", now.minus(1, ChronoUnit.DAYS));
 
-    when(jobRepository.searchByUserAndTerm(testUser, searchTerm))
+    when(jobRepository.searchByUserAndTerm(testUser.getId(), searchTerm))
         .thenReturn(Arrays.asList(job1, job2));
 
     // Act
@@ -222,7 +226,7 @@ class DashboardServiceTest {
     assertThat(result.get(0).getJobTitle()).isEqualTo("Software Engineer");
     assertThat(result.get(1).getJobTitle()).isEqualTo("DevOps Engineer");
 
-    verify(jobRepository).searchByUserAndTerm(testUser, searchTerm);
+    verify(jobRepository).searchByUserAndTerm(testUser.getId(), searchTerm);
   }
 
   @Test
@@ -232,7 +236,7 @@ class DashboardServiceTest {
     Job job1 = createTestJob("Job 1", status, now);
     Job job2 = createTestJob("Job 2", status, now.minus(1, ChronoUnit.DAYS));
 
-    when(jobRepository.findByUserAndStatusOrderByCreatedAtDesc(testUser, status))
+    when(jobRepository.findByUserIdAndStatusOrderByCreatedAtDesc(testUser.getId(), status))
         .thenReturn(Arrays.asList(job1, job2));
 
     // Act
@@ -244,7 +248,7 @@ class DashboardServiceTest {
     assertThat(result.get(0).getStatus()).isEqualTo(status);
     assertThat(result.get(1).getStatus()).isEqualTo(status);
 
-    verify(jobRepository).findByUserAndStatusOrderByCreatedAtDesc(testUser, status);
+    verify(jobRepository).findByUserIdAndStatusOrderByCreatedAtDesc(testUser.getId(), status);
   }
 
   @Test
@@ -273,26 +277,28 @@ class DashboardServiceTest {
   void getUserStats_VerifyTimeRangeCalculations() {
     // Arrange
     mockJobRepositoryCounts();
-    when(jobRepository.findTop10ByUserOrderByCreatedAtDesc(testUser))
+    when(jobRepository.findTop10ByUserIdOrderByCreatedAtDesc(testUser.getId()))
         .thenReturn(Collections.emptyList());
 
     // Act
     dashboardService.getUserStats(testUser);
 
-    // Assert - Verify the time range calculations are approximately correct (3 calls: week, month,
+    // Assert - Verify the time range calculations are approximately correct (3
+    // calls: week, month,
     // quarter)
-    verify(jobRepository, times(3)).countByUserAndCreatedAtAfter(eq(testUser), any(Instant.class));
+    verify(jobRepository, times(3))
+        .countByUserIdAndCreatedAtAfter(eq(testUser.getId()), any(Instant.class));
   }
 
   // Helper methods
 
   private void mockJobRepositoryCounts() {
-    when(jobRepository.countByUser(testUser)).thenReturn(10L);
-    when(jobRepository.countByUserAndStatus(testUser, "COMPLETED")).thenReturn(7L);
-    when(jobRepository.countByUserAndStatus(testUser, "FAILED")).thenReturn(1L);
-    when(jobRepository.countByUserAndStatus(testUser, "PENDING")).thenReturn(1L);
-    when(jobRepository.countByUserAndStatus(testUser, "PROCESSING")).thenReturn(1L);
-    when(jobRepository.countByUserAndCreatedAtAfter(eq(testUser), any(Instant.class)))
+    when(jobRepository.countByUserId(testUser.getId())).thenReturn(10L);
+    when(jobRepository.countByUserIdAndStatus(testUser.getId(), "COMPLETED")).thenReturn(7L);
+    when(jobRepository.countByUserIdAndStatus(testUser.getId(), "FAILED")).thenReturn(1L);
+    when(jobRepository.countByUserIdAndStatus(testUser.getId(), "PENDING")).thenReturn(1L);
+    when(jobRepository.countByUserIdAndStatus(testUser.getId(), "PROCESSING")).thenReturn(1L);
+    when(jobRepository.countByUserIdAndCreatedAtAfter(eq(testUser.getId()), any(Instant.class)))
         .thenReturn(3L) // This week
         .thenReturn(8L); // This month
   }
@@ -301,7 +307,7 @@ class DashboardServiceTest {
     Job job1 = createTestJob("Software Engineer", "COMPLETED", now.minus(1, ChronoUnit.HOURS));
     Job job2 = createTestJob("Product Manager", "PENDING", now.minus(2, ChronoUnit.HOURS));
 
-    when(jobRepository.findTop10ByUserOrderByCreatedAtDesc(testUser))
+    when(jobRepository.findTop10ByUserIdOrderByCreatedAtDesc(testUser.getId()))
         .thenReturn(Arrays.asList(job1, job2));
   }
 

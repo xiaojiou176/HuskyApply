@@ -9,8 +9,8 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * Represents a job application event in the tracking timeline.
- * Events can include application submission, interviews, phone screens, follow-ups, etc.
+ * Represents a job application event in the tracking timeline. Events can include application
+ * submission, interviews, phone screens, follow-ups, etc.
  */
 @Table("job_events")
 public class JobEvent {
@@ -81,7 +81,7 @@ public class JobEvent {
     public static final String THANK_YOU_SENT = "THANK_YOU_SENT";
     public static final String DEADLINE_REMINDER = "DEADLINE_REMINDER";
     public static final String APPLICATION_WITHDRAWN = "APPLICATION_WITHDRAWN";
-    
+
     private EventType() {} // Prevent instantiation
   }
 
@@ -91,7 +91,7 @@ public class JobEvent {
     public static final String COMPLETED = "COMPLETED";
     public static final String CANCELLED = "CANCELLED";
     public static final String RESCHEDULED = "RESCHEDULED";
-    
+
     private EventStatus() {} // Prevent instantiation
   }
 
@@ -101,7 +101,7 @@ public class JobEvent {
     public static final String FAILED = "FAILED";
     public static final String WAITING_FOR_FEEDBACK = "WAITING_FOR_FEEDBACK";
     public static final String RESCHEDULED = "RESCHEDULED";
-    
+
     private Outcome() {} // Prevent instantiation
   }
 
@@ -276,15 +276,26 @@ public class JobEvent {
 
   @Override
   public String toString() {
-    return "JobEvent{" +
-        "id=" + id +
-        ", jobId=" + jobId +
-        ", eventType='" + eventType + '\'' +
-        ", eventStatus='" + eventStatus + '\'' +
-        ", eventDate=" + eventDate +
-        ", title='" + title + '\'' +
-        ", location='" + location + '\'' +
-        '}';
+    return "JobEvent{"
+        + "id="
+        + id
+        + ", jobId="
+        + jobId
+        + ", eventType='"
+        + eventType
+        + '\''
+        + ", eventStatus='"
+        + eventStatus
+        + '\''
+        + ", eventDate="
+        + eventDate
+        + ", title='"
+        + title
+        + '\''
+        + ", location='"
+        + location
+        + '\''
+        + '}';
   }
 
   // Builder Pattern

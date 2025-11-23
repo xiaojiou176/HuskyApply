@@ -49,11 +49,12 @@ public class EnhancedDataSourceConfig {
     int availableCpus = Runtime.getRuntime().availableProcessors();
     int optimalMinIdle = Math.max(10, availableCpus * 2); // CPU-based minimum
     int optimalMaxPoolSize = Math.max(50, availableCpus * 8); // Scale with CPU cores
-    
+
     config.setMinimumIdle(optimalMinIdle); // Dynamic minimum connections
     config.setMaximumPoolSize(optimalMaxPoolSize); // Dynamic maximum pool size
     config.setIdleTimeout(TimeUnit.MINUTES.toMillis(8)); // Reduced idle timeout for efficiency
-    config.setMaxLifetime(TimeUnit.MINUTES.toMillis(90)); // Shorter lifetime for better connection health
+    config.setMaxLifetime(
+        TimeUnit.MINUTES.toMillis(90)); // Shorter lifetime for better connection health
 
     // Optimized connection acquisition settings
     config.setConnectionTimeout(TimeUnit.SECONDS.toMillis(15)); // Faster timeout for responsiveness
@@ -83,12 +84,13 @@ public class EnhancedDataSourceConfig {
 
     // Advanced PostgreSQL-specific optimizations for production scale
     config.addDataSourceProperty("ApplicationName", "HuskyApply-Gateway-v2");
-    config.addDataSourceProperty("defaultRowFetchSize", "2000"); // Increased row fetch size for better throughput
+    config.addDataSourceProperty(
+        "defaultRowFetchSize", "2000"); // Increased row fetch size for better throughput
     config.addDataSourceProperty("logUnclosedConnections", "true"); // Debug connection leaks
     config.addDataSourceProperty("assumeMinServerVersion", "16.0"); // Assume PostgreSQL 16
     config.addDataSourceProperty("stringtype", "unspecified"); // Optimize string handling
     config.addDataSourceProperty("binaryTransfer", "true"); // Use binary protocol when possible
-    
+
     // Advanced connection-level optimizations
     config.addDataSourceProperty("tcpKeepAlive", "true"); // TCP keep-alive for long connections
     config.addDataSourceProperty("socketTimeout", "30"); // 30s socket timeout
@@ -96,18 +98,20 @@ public class EnhancedDataSourceConfig {
     config.addDataSourceProperty("cancelSignalTimeout", "5"); // 5s cancel timeout
     config.addDataSourceProperty("readOnlyMode", "false"); // Ensure write capability
     config.addDataSourceProperty("preferQueryMode", "extended"); // Use extended query mode
-    
+
     // Memory and performance tuning
     config.addDataSourceProperty("receiveBufferSize", "65536"); // 64KB receive buffer
     config.addDataSourceProperty("sendBufferSize", "65536"); // 64KB send buffer
-    config.addDataSourceProperty("shared_preload_libraries", "pg_stat_statements"); // Enable query stats
+    config.addDataSourceProperty(
+        "shared_preload_libraries", "pg_stat_statements"); // Enable query stats
 
     // Register metrics and health checks
     config.setRegisterMbeans(true); // Enable JMX monitoring
 
     // Log optimized configuration
-    System.out.printf("✓ Optimized Primary DataSource - CPUs: %d, MinIdle: %d, MaxPool: %d%n", 
-                      availableCpus, optimalMinIdle, optimalMaxPoolSize);
+    System.out.printf(
+        "✓ Optimized Primary DataSource - CPUs: %d, MinIdle: %d, MaxPool: %d%n",
+        availableCpus, optimalMinIdle, optimalMaxPoolSize);
 
     return new HikariDataSource(config);
   }
@@ -129,7 +133,7 @@ public class EnhancedDataSourceConfig {
     int availableCpus = Runtime.getRuntime().availableProcessors();
     int readMinIdle = Math.max(5, availableCpus); // CPU-based minimum for reads
     int readMaxPoolSize = Math.max(25, availableCpus * 4); // Read-optimized pool size
-    
+
     config.setMinimumIdle(readMinIdle); // Dynamic minimum for read workloads
     config.setMaximumPoolSize(readMaxPoolSize); // Scaled for analytics queries
     config.setIdleTimeout(TimeUnit.MINUTES.toMillis(12)); // Balanced idle timeout
@@ -150,17 +154,18 @@ public class EnhancedDataSourceConfig {
     config.addDataSourceProperty("rewriteBatchedStatements", "true");
     config.addDataSourceProperty("ApplicationName", "HuskyApply-Gateway-ReadOnly-v2");
     config.addDataSourceProperty("defaultRowFetchSize", "5000"); // Larger fetch for analytics
-    
+
     // Read-specific PostgreSQL optimizations
     config.addDataSourceProperty("readOnlyMode", "true"); // Explicit read-only mode
     config.addDataSourceProperty("preferQueryMode", "simple"); // Simple mode for read queries
     config.addDataSourceProperty("tcpKeepAlive", "true"); // Keep connections alive
     config.addDataSourceProperty("receiveBufferSize", "131072"); // 128KB for large result sets
     config.addDataSourceProperty("sendBufferSize", "32768"); // 32KB sufficient for reads
-    
+
     // Log read replica configuration
-    System.out.printf("✓ Optimized Read-Only DataSource - CPUs: %d, MinIdle: %d, MaxPool: %d%n", 
-                      availableCpus, readMinIdle, readMaxPoolSize);
+    System.out.printf(
+        "✓ Optimized Read-Only DataSource - CPUs: %d, MinIdle: %d, MaxPool: %d%n",
+        availableCpus, readMinIdle, readMaxPoolSize);
 
     config.setRegisterMbeans(true);
 
